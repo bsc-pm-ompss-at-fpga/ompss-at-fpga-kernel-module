@@ -74,6 +74,7 @@ int read_memspace(struct device_node *node, u32 *mem_space) {
 
 static int ompss_at_fpga_driver_probe(struct platform_device *pdev) {
 	int ret_code = 0;
+	pr_info("<%s> Module probe\n", MODULE_NAME);
 	ret_code |= hwcounter_probe(pdev);
 	ret_code |= xdma_probe(pdev);
 	ret_code |= xdmamem_probe(pdev);
@@ -84,6 +85,7 @@ static int ompss_at_fpga_driver_probe(struct platform_device *pdev) {
 
 static int ompss_at_fpga_driver_remove(struct platform_device *pdev) {
 	int ret_code = 0;
+	pr_info("<%s> Module remove\n", MODULE_NAME);
 	ret_code |= hwruntime_remove(pdev);
 	ret_code |= bitinfo_remove(pdev);
 	ret_code |= xdmamem_remove(pdev);
