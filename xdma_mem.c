@@ -363,11 +363,12 @@ int xdmamem_probe(struct platform_device *pdev)
 
 
 	//get device memory address
+	dev_mem_dev = NULL;
 	if (dev_mem_map_io(pdev->dev.of_node) < 0) {
 		pr_warn("<%s> Could not map device address space\n", MODULE_NAME);
 		//This is not an error as we may be in a shared memory device
 		return 0;
-    }
+	}
 
 	//create device memory device
 	dev_mem_dev = device_create(cl, &xdmamem_pdev->dev,
@@ -389,6 +390,7 @@ int xdmamem_probe(struct platform_device *pdev)
 xdmamem_dev_mem_cdev_err:
 	device_destroy(cl, MKDEV(xdmamem_major, XDMAMEM_DEV_MEM_MINOR));
 xdmamem_dev_mem_err:
+	dev_mem_dev = NULL;
 xdmamem_cdev_err:
 	device_destroy(cl, dev_num);
 xdmamem_dev_err:
@@ -415,9 +417,11 @@ int xdmamem_remove(struct platform_device *pdev)
 	xdmamem_free_buffers();
 	kmem_cache_destroy(buf_handle_cache);
 
-	/* device destructor */
-	cdev_del(&cdev_dev_mem);
-	device_destroy(cl, MKDEV(xdmamem_major, XDMAMEM_DEV_MEM_MINOR));
+	// Device memory
+	if (dev_mem_dev != NULL) {
+		cdev_del(&cdev_dev_mem);
+		device_destroy(cl, MKDEV(xdmamem_major, XDMAMEM_DEV_MEM_MINOR));
+	}
 
 	cdev_del(&c_dev);
 	device_destroy(cl, dev_num);
