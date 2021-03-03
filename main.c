@@ -28,23 +28,23 @@ int generic_open(int *opens_cnt, const int max_opens, const char *name) {
 	//NOTE: Not optimizing with initial check as f&a will almost always succed
 	if (__sync_fetch_and_add(opens_cnt, 1) >= max_opens) {
 		__sync_sub_and_fetch(opens_cnt, 1);
-		printk(KERN_DEBUG "<%s> open: Device '%s' opened more times than allowed (%d)\n",
+		pr_debug("<%s> open: Device '%s' opened more times than allowed (%d)\n",
 			MODULE_NAME, name, max_opens);
 		return -EBUSY;
 	}
-	printk(KERN_DEBUG "<%s> Open '%s'\n", MODULE_NAME, name);
+	pr_debug("<%s> Open '%s'\n", MODULE_NAME, name);
 	return 0;
 }
 
 int generic_close(int *opens_cnt, const char *name) {
 	int cnt = __sync_sub_and_fetch(opens_cnt, 1);
 	if (cnt < 0) {
-		printk(KERN_WARNING "<%s> close: "
+		pr_warn("<%s> close: "
 			"Device '%s' has been closed more times than opened\n",
 			MODULE_NAME, name);
 		return -1;
 	}
-	printk(KERN_DEBUG "<%s> Close '%s'\n", MODULE_NAME, name);
+	pr_debug("<%s> Close '%s'\n", MODULE_NAME, name);
 	return 0;
 }
 
@@ -53,7 +53,7 @@ int generic_mmap(struct file *filp, struct vm_area_struct *vma, unsigned long io
 	unsigned long size;
 
 	size = vma->vm_end - vma->vm_start;
-	printk(KERN_DEBUG "<%s> mmap '%s': addr 0x%lx, size %lu\n", MODULE_NAME, name, io_addr, size);
+	pr_debug("<%s> mmap '%s': addr 0x%lx, size %lu\n", MODULE_NAME, name, io_addr, size);
 
 	vma->vm_page_prot = phys_mem_access_prot(
 			filp, io_addr >> PAGE_SHIFT, size, vma->vm_page_prot);
@@ -74,6 +74,7 @@ int read_memspace(struct device_node *node, u32 *mem_space) {
 
 static int ompss_at_fpga_driver_probe(struct platform_device *pdev) {
 	int ret_code = 0;
+	pr_info("<%s> Module probe\n", MODULE_NAME);
 	ret_code |= hwcounter_probe(pdev);
 	ret_code |= xdma_probe(pdev);
 	ret_code |= xdmamem_probe(pdev);
@@ -84,6 +85,7 @@ static int ompss_at_fpga_driver_probe(struct platform_device *pdev) {
 
 static int ompss_at_fpga_driver_remove(struct platform_device *pdev) {
 	int ret_code = 0;
+	pr_info("<%s> Module remove\n", MODULE_NAME);
 	ret_code |= hwruntime_remove(pdev);
 	ret_code |= bitinfo_remove(pdev);
 	ret_code |= xdmamem_remove(pdev);
