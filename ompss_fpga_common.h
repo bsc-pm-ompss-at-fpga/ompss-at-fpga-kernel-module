@@ -62,11 +62,27 @@ int generic_mmap(struct file *filp, struct vm_area_struct *vma,
 int bitinfo_get_rev(void);
 int bitinfo_get_num_acc(void);
 int bitinfo_dma_enabled(void);
+u32 * get_n_field_ptr(const u8 n);
+int read_hwruntime_addr_from_bitinfo(int rev, const char* phandle_name, int extended_queue, int bitinfo_addr_offset, unsigned long* dev_mem_space);
+int read_hwcounter_addr_from_bitinfo(int rev, unsigned long* hwcounter_phy_addr);
 
 #if TARGET_64_BITS
 int read_memspace(struct device_node *node, u64 *mem_space);
 #else
 int read_memspace(struct device_node *node, u32 *mem_space);
 #endif
+
+#define BITINFO_MIN_DYNAMIC_REV       7
+
+#define CMD_IN_BITINFO_ADDR_OFFSET    0
+#define CMD_IN_BITINFO_LEN_OFFSET     2
+#define CMD_OUT_BITINFO_ADDR_OFFSET   3
+#define CMD_OUT_BITINFO_LEN_OFFSET    5
+#define SPWN_IN_BITINFO_ADDR_OFFSET   6
+#define SPWN_IN_BITINFO_LEN_OFFSET    8
+#define SPWN_OUT_BITINFO_ADDR_OFFSET  9
+#define SPWN_OUT_BITINFO_LEN_OFFSET   11
+#define RST_BITINFO_ADDR_OFFSET       12
+#define HWCOUNTER_BITINFO_ADDR_OFFSET 14
 
 #endif //__OMPSS_FPGA_COMMON_H__
