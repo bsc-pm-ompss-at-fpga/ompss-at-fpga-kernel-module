@@ -67,56 +67,14 @@ unsigned long cmd_in_io_addr;
 unsigned long cmd_out_io_addr;
 unsigned long spwn_out_io_addr;
 unsigned long spwn_in_io_addr;
-unsigned long ctrl_io_devtree_addr;
-unsigned long cmd_in_io_devtree_addr;
-unsigned long cmd_out_io_devtree_addr;
-unsigned long spwn_out_io_devtree_addr;
-unsigned long spwn_in_io_devtree_addr;
-
-int read_hwruntime_addr_from_devtree(struct device_node *hwcounter_node,
-	const char* phandle_name,
-#if TARGET_64_BITS
-	u64 dev_mem_space[2]
-#else
-	u32 dev_mem_space[2]
-#endif
-) {
-	int status;
-	struct device_node *dev_node;
-	dev_node = of_parse_phandle(hwcounter_node, phandle_name, 0);
-	if (dev_node != NULL) {
-		status = read_memspace(dev_node, dev_mem_space);
-		of_node_put(dev_node);
-		if (status < 0) {
-			printk(KERN_WARNING "<%s> Could not read address of '%s'\n", MODULE_NAME, phandle_name);
-			return -1;
-		}
-	} else {
-		return 0;
-	}
-	return 1;
-}
 
 static int hwruntime_ctrl_open(struct inode *i, struct file *f) {
-	int status, rev;
+	int status;
 	status = generic_open(&ctrl_opens_cnt, 1 /*max opens*/, CTRL_DEV_NAME);
 	if (status) {
 		return status;
 	}
-	rev = bitinfo_get_rev();
-	if (rev >= BITINFO_MIN_DYNAMIC_REV) {
-		read_hwruntime_addr_from_bitinfo(rev, CTRL_PHANDLE_NAME, 0, RST_BITINFO_ADDR_OFFSET, &ctrl_io_addr);
-		if (ctrl_io_devtree_addr != 0) {
-			printk(KERN_WARNING "<%s> Device %s found in the devicetree but loaded bitstream uses dynamic address allocation\n", MODULE_NAME, CTRL_DEV_NAME);
-		}
-	} else if (rev == 0) { //Error reading bitinfo
-		return -1;
-	} else if (ctrl_io_devtree_addr == 0) {
-		printk(KERN_ERR "<%s> Device %s not found in the devicetree\n", MODULE_NAME, CTRL_DEV_NAME);
-		return -ENODEV;
-	} else {
-		ctrl_io_addr = ctrl_io_devtree_addr;
-	}
+	read_hwruntime_addr_from_bitinfo(CTRL_PHANDLE_NAME, 0, RST_BITINFO_ADDR_OFFSET, &ctrl_io_addr);
 	return 0;
 }
 
@@ -130,25 +88,12 @@ static int hwruntime_ctrl_mmap(struct file *filp, struct vm_area_struct *vma) {
 }
 
 static int hwruntime_cmd_in_open(struct inode *i, struct file *f) {
-	int status, rev;
+	int status;
 	status = generic_open(&cmd_in_opens_cnt, 1, CMD_IN_DEV_NAME);
 	if (status) {
 		return status;
 	}
-	rev = bitinfo_get_rev();
-	if (rev >= BITINFO_MIN_DYNAMIC_REV) {
-		read_hwruntime_addr_from_bitinfo(rev, CMD_IN_PHANDLE_NAME, 0, CMD_IN_BITINFO_ADDR_OFFSET, &cmd_in_io_addr);
-		if (cmd_in_io_devtree_addr != 0) {
-			printk(KERN_WARNING "<%s> Device %s found in the devicetree but loaded bitstream uses dynamic address allocation\n", MODULE_NAME, CMD_IN_DEV_NAME);
-		}
-	} else if (rev == 0) { //Error reading bitinfo
-		return -1;
-	} else if (cmd_in_io_devtree_addr == 0) {
-		printk(KERN_ERR "<%s> Device %s not found in the devicetree\n", MODULE_NAME, CMD_IN_DEV_NAME);
-		return -ENODEV;
-	} else {
-		cmd_in_io_addr = cmd_in_io_devtree_addr;
-	}
+	read_hwruntime_addr_from_bitinfo(CMD_IN_PHANDLE_NAME, 0, CMD_IN_BITINFO_ADDR_OFFSET, &cmd_in_io_addr);
 	return 0;
 }
 
@@ -162,25 +107,12 @@ static int hwruntime_cmd_in_mmap(struct file *filp, struct vm_area_struct *vma) 
 }
 
 static int hwruntime_cmd_out_open(struct inode *i, struct file *f) {
-	int status, rev;
+	int status;
 	status = generic_open(&cmd_out_opens_cnt, 1, CMD_OUT_DEV_NAME);
 	if (status) {
 		return status;
 	}
-	rev = bitinfo_get_rev();
-	if (rev >= BITINFO_MIN_DYNAMIC_REV) {
-		read_hwruntime_addr_from_bitinfo(rev, CMD_OUT_PHANDLE_NAME, 0, CMD_OUT_BITINFO_ADDR_OFFSET, &cmd_out_io_addr);
-		if (cmd_out_io_devtree_addr != 0) {
-			printk(KERN_WARNING "<%s> Device %s found in the devicetree but loaded bitstream uses dynamic address allocation\n", MODULE_NAME, CMD_OUT_DEV_NAME);
-		}
-	} else if (rev == 0) { //Error reading bitinfo
-		return -1;
-	} else if (cmd_out_io_devtree_addr == 0) {
-		printk(KERN_ERR "<%s> Device %s not found in the devicetree\n", MODULE_NAME, CMD_OUT_DEV_NAME);
-		return -ENODEV;
-	} else {
-		cmd_out_io_addr = cmd_out_io_devtree_addr;
-	}
+	read_hwruntime_addr_from_bitinfo(CMD_OUT_PHANDLE_NAME, 0, CMD_OUT_BITINFO_ADDR_OFFSET, &cmd_out_io_addr);
 	return 0;
 }
 
@@ -194,26 +126,15 @@ static int hwruntime_cmd_out_mmap(struct file *filp, struct vm_area_struct *vma)
 }
 
 static int hwruntime_spwn_out_open(struct inode *i, struct file *f) {
-	int status, rev;
+	int status;
 	status = generic_open(&spwn_out_opens_cnt, 1, SPWN_OUT_DEV_NAME);
 	if (status) {
 		return status;
 	}
-	rev = bitinfo_get_rev();
-	if (rev >= BITINFO_MIN_DYNAMIC_REV) {
-		status = read_hwruntime_addr_from_bitinfo(rev, SPWN_OUT_PHANDLE_NAME, 1, SPWN_OUT_BITINFO_ADDR_OFFSET, &spwn_out_io_addr);
-		if (spwn_out_io_devtree_addr != 0) {
-			printk(KERN_WARNING "<%s> Device %s found in the devicetree but loaded bitstream uses dynamic address allocation\n", MODULE_NAME, SPWN_OUT_DEV_NAME);
-		}
-		if (status == 0) { //Extended hwruntime not enabled
-			return -ENODEV;
-		}
-	} else if (rev == 0) { //Error reading bitinfo
-		return -1;
-	} else if (spwn_out_io_devtree_addr == 0) {
+	status = read_hwruntime_addr_from_bitinfo(SPWN_OUT_PHANDLE_NAME, 1, SPWN_OUT_BITINFO_ADDR_OFFSET, &spwn_out_io_addr);
+	if (status == 0) { //Extended hwruntime not enabled
+		__sync_sub_and_fetch(&spwn_out_opens_cnt, 1);
 		return -ENODEV;
-	} else {
-		spwn_out_io_addr = spwn_out_io_devtree_addr;
 	}
 	return 0;
 }
@@ -228,26 +149,15 @@ static int hwruntime_spwn_out_mmap(struct file *filp, struct vm_area_struct *vma
 }
 
 static int hwruntime_spwn_in_open(struct inode *i, struct file *f) {
-	int status, rev;
+	int status;
 	status = generic_open(&spwn_in_opens_cnt, 1, SPWN_IN_DEV_NAME);
 	if (status) {
 		return status;
 	}
-	rev = bitinfo_get_rev();
-	if (rev >= BITINFO_MIN_DYNAMIC_REV) {
-		status = read_hwruntime_addr_from_bitinfo(rev, SPWN_IN_PHANDLE_NAME, 1, SPWN_IN_BITINFO_ADDR_OFFSET, &spwn_in_io_addr);
-		if (spwn_in_io_devtree_addr != 0) {
-			printk(KERN_WARNING "<%s> Device %s found in the devicetree but loaded bitstream uses dynamic address allocation\n", MODULE_NAME, SPWN_IN_DEV_NAME);
-		}
-		if (status == 0) { //Extended hwruntime not enabled
-			return -ENODEV;
-		}
-	} else if (rev == 0) { //Error reading bitinfo
-		return -1;
-	} else if (spwn_in_io_devtree_addr == 0) {
+	status = read_hwruntime_addr_from_bitinfo(SPWN_IN_PHANDLE_NAME, 1, SPWN_IN_BITINFO_ADDR_OFFSET, &spwn_in_io_addr);
+	if (status == 0) { //Extended hwruntime not enabled
+		__sync_sub_and_fetch(&spwn_in_opens_cnt, 1);
 		return -ENODEV;
-	} else {
-		spwn_in_io_addr = spwn_in_io_devtree_addr;
 	}
 	return 0;
 }
@@ -292,69 +202,6 @@ static struct file_operations hwruntime_spwn_in_ops = {
 	.mmap = hwruntime_spwn_in_mmap,
 };
 
-static int hwruntime_map_io(struct device_node *hwruntime_node) {
-	int status;
-#if TARGET_64_BITS
-	u64 dev_mem_space[2]; //address & size
-#else
-	u32 dev_mem_space[2];
-#endif
-
-	status = read_hwruntime_addr_from_devtree(hwruntime_node, CTRL_PHANDLE_NAME, dev_mem_space);
-	if (status == -1) {
-		goto ctrl_of_err;
-	} else if (status == 0) { //Node not found in device tree
-		ctrl_io_devtree_addr = 0;
-	} else {
-		ctrl_io_devtree_addr = (unsigned long)dev_mem_space[0];
-	}
-
-	status = read_hwruntime_addr_from_devtree(hwruntime_node, CMD_IN_PHANDLE_NAME, dev_mem_space);
-	if (status == -1) {
-		goto cmd_in_of_err;
-	} else if (status == 0) {
-		cmd_in_io_devtree_addr = 0;
-	} else {
-		cmd_in_io_devtree_addr = (unsigned long)dev_mem_space[0];
-	}
-
-	status = read_hwruntime_addr_from_devtree(hwruntime_node, CMD_OUT_PHANDLE_NAME, dev_mem_space);
-	if (status == -1) {
-		goto cmd_out_of_err;
-	} else if (status == 0) {
-		cmd_out_io_devtree_addr = 0;
-	} else {
-		cmd_out_io_devtree_addr = (unsigned long)dev_mem_space[0];
-	}
-
-	status = read_hwruntime_addr_from_devtree(hwruntime_node, SPWN_OUT_PHANDLE_NAME, dev_mem_space);
-	if (status == -1) {
-		goto spwn_out_of_err;
-	} else if (status == 0) {
-		spwn_out_io_devtree_addr = 0;
-	} else {
-		spwn_out_io_devtree_addr = (unsigned long)dev_mem_space[0];
-   }
-
-	status = read_hwruntime_addr_from_devtree(hwruntime_node, SPWN_IN_PHANDLE_NAME, dev_mem_space);
-	if (status == -1) {
-		goto spwn_in_of_err;
-	} else if (status == 0) {
-		spwn_in_io_devtree_addr = 0;
-	} else {
-		spwn_in_io_devtree_addr = (unsigned long)dev_mem_space[0];
-	}
-
-	return 0;
-
-spwn_in_of_err:
-spwn_out_of_err:
-cmd_out_of_err:
-cmd_in_of_err:
-ctrl_of_err:
-	return -1;
-}
-
 int hwruntime_probe(struct platform_device *pdev)
 {
 	ctrl_io_addr = 0;
@@ -362,15 +209,10 @@ int hwruntime_probe(struct platform_device *pdev)
 	cmd_out_io_addr = 0;
 	spwn_out_io_addr = 0;
 	spwn_in_io_addr = 0;
-	//Get the addresses from the devicetree
-	if (hwruntime_map_io(pdev->dev.of_node) < 0) {
-		printk(KERN_ERR "<%s> Error mapping hwruntime IO\n", MODULE_NAME);
-		goto map_io_err;
-	}
 
 	//Create the device class
 	if (alloc_chrdev_region(&hwruntime_devt, 0, TM_NUM_DEVICES, TM_MODULE_NAME) < 0) {
-		printk(KERN_ERR "<%s> Could not allocate region for taskmanager devices\n",
+		pr_err("<%s> Could not allocate region for taskmanager devices\n",
 			MODULE_NAME);
 		goto hwruntime_alloc_chrdev_err;
 	}
@@ -378,7 +220,7 @@ int hwruntime_probe(struct platform_device *pdev)
 
 	tm_cl = class_create(THIS_MODULE, TM_MODULE_NAME);
 	if (tm_cl == NULL) {
-		printk(KERN_ERR "<%s> Could not create hwruntime device class\n",
+		pr_err("<%s> Could not create hwruntime device class\n",
 			MODULE_NAME);
 		goto class_err;
 	}
@@ -387,7 +229,7 @@ int hwruntime_probe(struct platform_device *pdev)
 	ctrl_dev = device_create(tm_cl, NULL, hwruntime_devt, NULL,
 			DEV_PREFIX "/" TM_DEV_DIR "/" CTRL_DEV_NAME);
 	if (IS_ERR(ctrl_dev)) {
-		printk(KERN_ERR "<%s> Could not create hwruntime device: '%s'\n",
+		pr_err("<%s> Could not create hwruntime device: '%s'\n",
 			MODULE_NAME, CTRL_DEV_NAME);
 		goto ctrl_dev_err;
 	}
@@ -401,7 +243,7 @@ int hwruntime_probe(struct platform_device *pdev)
 	cmd_in_dev = device_create(tm_cl, NULL, MKDEV(hwruntime_major, CMD_IN_MINOR), NULL,
 			DEV_PREFIX "/" TM_DEV_DIR "/" CMD_IN_DEV_NAME);
 	if (IS_ERR(cmd_in_dev)) {
-		printk(KERN_ERR "<%s> Could not create hwruntime device: '%s'\n",
+		pr_err("<%s> Could not create hwruntime device: '%s'\n",
 			MODULE_NAME, CMD_IN_DEV_NAME);
 		goto cmd_in_dev_err;
 	}
@@ -415,7 +257,7 @@ int hwruntime_probe(struct platform_device *pdev)
 	cmd_out_dev = device_create(tm_cl, NULL, MKDEV(hwruntime_major, CMD_OUT_MINOR), NULL,
 			DEV_PREFIX "/" TM_DEV_DIR "/" CMD_OUT_DEV_NAME);
 	if (IS_ERR(cmd_out_dev)) {
-		printk(KERN_ERR "<%s> Could not create hwruntime device: '%s'\n",
+		pr_err("<%s> Could not create hwruntime device: '%s'\n",
 			MODULE_NAME, CMD_OUT_DEV_NAME);
 		goto cmd_out_dev_err;
 	}
@@ -429,7 +271,7 @@ int hwruntime_probe(struct platform_device *pdev)
 	spwn_out_dev = device_create(tm_cl, NULL, MKDEV(hwruntime_major, SPWN_OUT_MINOR), NULL,
 			DEV_PREFIX "/" TM_DEV_DIR "/" SPWN_OUT_DEV_NAME);
 	if (IS_ERR(spwn_out_dev)) {
-		printk(KERN_ERR "<%s> Could not create hwruntime device: '%s'\n",
+		pr_err("<%s> Could not create hwruntime device: '%s'\n",
 			MODULE_NAME, SPWN_OUT_DEV_NAME);
 		goto spwn_out_dev_err;
 	}
@@ -443,7 +285,7 @@ int hwruntime_probe(struct platform_device *pdev)
 	spwn_in_dev = device_create(tm_cl, NULL, MKDEV(hwruntime_major, SPWN_IN_MINOR), NULL,
 			DEV_PREFIX "/" TM_DEV_DIR "/" SPWN_IN_DEV_NAME);
 	if (IS_ERR(spwn_in_dev)) {
-		printk(KERN_ERR "<%s> Could not create hwruntime device: '%s'\n",
+		pr_err("<%s> Could not create hwruntime device: '%s'\n",
 			MODULE_NAME, SPWN_IN_DEV_NAME);
 		goto spwn_in_dev_err;
 	}
@@ -478,12 +320,6 @@ ctrl_dev_err:
 class_err:
 	unregister_chrdev_region(hwruntime_devt, TM_NUM_DEVICES);
 hwruntime_alloc_chrdev_err:
-	ctrl_io_devtree_addr = 0;
-	cmd_in_io_devtree_addr = 0;
-	cmd_out_io_devtree_addr = 0;
-	spwn_out_io_devtree_addr = 0;
-	spwn_in_io_devtree_addr = 0;
-map_io_err:
 	tm_cl = NULL;
 	return -1;
 }
@@ -491,49 +327,44 @@ map_io_err:
 int hwruntime_remove(struct platform_device *pdev)
 {
 	if (ctrl_opens_cnt != 0) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, CTRL_DEV_NAME);
 	}
 
 	cdev_del(&ctrl_cdev);
 	device_destroy(tm_cl, hwruntime_devt);
-	ctrl_io_devtree_addr = 0;
 
 	if (cmd_in_opens_cnt != 0) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, CMD_IN_DEV_NAME);
 	}
 
 	cdev_del(&cmd_in_cdev);
 	device_destroy(tm_cl, MKDEV(hwruntime_major, CMD_IN_MINOR));
-	cmd_in_io_devtree_addr = 0;
 
 	if (cmd_out_opens_cnt != 0) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, CMD_OUT_DEV_NAME);
 	}
 
 	cdev_del(&cmd_out_cdev);
 	device_destroy(tm_cl, MKDEV(hwruntime_major, CMD_OUT_MINOR));
-	cmd_out_io_devtree_addr = 0;
 
 	if (spwn_out_opens_cnt != 0) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, SPWN_OUT_DEV_NAME);
 	}
 
 	cdev_del(&spwn_out_cdev);
 	device_destroy(tm_cl, MKDEV(hwruntime_major, SPWN_OUT_MINOR));
-	spwn_out_io_devtree_addr = 0;
 
 	if (spwn_in_opens_cnt != 0) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, SPWN_IN_DEV_NAME);
 	}
 
 	cdev_del(&spwn_in_cdev);
 	device_destroy(tm_cl, MKDEV(hwruntime_major, SPWN_IN_MINOR));
-	spwn_in_io_devtree_addr = 0;
 
 	if (tm_cl != NULL) {
 		class_destroy(tm_cl);

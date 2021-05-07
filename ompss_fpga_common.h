@@ -61,18 +61,15 @@ int generic_mmap(struct file *filp, struct vm_area_struct *vma,
 
 int bitinfo_get_rev(void);
 int bitinfo_get_num_acc(void);
-int bitinfo_dma_enabled(void);
 u32 * get_n_field_ptr(const u8 n);
-int read_hwruntime_addr_from_bitinfo(int rev, const char* phandle_name, int extended_queue, int bitinfo_addr_offset, unsigned long* dev_mem_space);
-int read_hwcounter_addr_from_bitinfo(int rev, unsigned long* hwcounter_phy_addr);
+int read_hwruntime_addr_from_bitinfo(const char* phandle_name, int extended_queue, int bitinfo_addr_offset, unsigned long* dev_mem_space);
+int read_hwcounter_addr_from_bitinfo(unsigned long* hwcounter_phy_addr);
 
 #if TARGET_64_BITS
 int read_memspace(struct device_node *node, u64 *mem_space);
 #else
 int read_memspace(struct device_node *node, u32 *mem_space);
 #endif
-
-#define BITINFO_MIN_DYNAMIC_REV       7
 
 #define CMD_IN_BITINFO_ADDR_OFFSET    0
 #define CMD_IN_BITINFO_LEN_OFFSET     2

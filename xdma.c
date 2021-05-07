@@ -47,7 +47,7 @@
 #define MAX_DEVICES       5
 
 #ifdef DEBUG_PRINT
-#define PRINT_DBG(...) printk( __VA_ARGS__)
+#define PRINT_DBG(...) pr_debug( __VA_ARGS__)
 #else
 #define PRINT_DBG(...)
 #endif
@@ -90,14 +90,14 @@ static int xdma_close(struct inode *i, struct file *f)
 static ssize_t xdma_read(struct file *f, char __user * buf, size_t
 			 len, loff_t * off)
 {
-	PRINT_DBG(KERN_DEBUG "<%s> file: read()\n", XDMA_MODULE_NAME);
+	PRINT_DBG("<%s> file: read()\n", XDMA_MODULE_NAME);
 	return -ENOSYS;
 }
 
 static ssize_t xdma_write(struct file *f, const char __user * buf,
 			  size_t len, loff_t * off)
 {
-	PRINT_DBG(KERN_DEBUG "<%s> file: write()\n", XDMA_MODULE_NAME);
+	PRINT_DBG("<%s> file: write()\n", XDMA_MODULE_NAME);
 	return -ENOSYS;
 }
 
@@ -169,7 +169,7 @@ static void print_sg_list(struct scatterlist *sg_list, int len) {
 	int i;
 
 	for_each_sg(sg_list, cur_sg, len, i) {
-		printk("<%s> pg link = %lx, off = %x, len = %d, dma_@ = %llx, dma_len = %d\n",
+		pr_debug("<%s> pg link = %lx, off = %x, len = %d, dma_@ = %llx, dma_len = %d\n",
 			MODULE_NAME,
 				cur_sg->page_link,
 				cur_sg->offset,
@@ -203,7 +203,7 @@ static int prepare_sg_list(struct sg_table **sg_tab,
 	page_list = (struct page **) __get_free_page(GFP_KERNEL);
 	status = sg_alloc_table(sg_tbl, nr_pages, GFP_KERNEL);
 	if (status) {
-		printk("Could not allocate SGtable\n");
+		pr_warn("Could not allocate SGtable\n");
 	}
 
 	offset = start_addr & ~PAGE_MASK;
@@ -219,7 +219,7 @@ static int prepare_sg_list(struct sg_table **sg_tab,
 		ret = get_user_pages_fast(cur_base, n_pg, 1, page_list);
 		if (ret < 0) {
 			//FIXME: free resources in case of error
-			printk(KERN_ERR "Error getting user pages from %lu\n", cur_base);
+			pr_err("Error getting user pages from %lu\n", cur_base);
 			return ret;
 		}
 		cur_base += ret*PAGE_SIZE;
@@ -273,7 +273,7 @@ static int xdma_prep_memcpy(struct xdma_memcpy_info *memcpy_info) {
 	sg_mem = kmalloc(sizeof(struct xdma_sg_mem), GFP_KERNEL);
 
 	if (!cmp) {
-		printk(KERN_ERR "Unable to allocate CDMA completion\n");
+		pr_err("Unable to allocate CDMA completion\n");
 	}
 	init_completion(cmp);
 	PRINT_DBG("memcpy 0x%lx (+ 0x%x) -> 0x%lx (+ 0x%x)\n",
@@ -300,12 +300,12 @@ static int xdma_prep_memcpy(struct xdma_memcpy_info *memcpy_info) {
 		PRINT_DBG("dev sg dma addr 0x%llx\n", dev_sg_ls->dma_address);
 		sg_mark_end(dev_sg_ls);
 		//looks like flags are not used
-		//printk("%p -> %p, %p, 1, %p,   %d, %x", cdma_dev, cdma_channel, dev_sg_ls,
+		//pr_debug("%p -> %p, %p, 1, %p,   %d, %x", cdma_dev, cdma_channel, dev_sg_ls,
 		//		usr_sg_tbl->sgl, usr_sg_tbl->nents, flags);
 #ifdef DEBUG_PRINT
-		printk("usr sg list\n");
+		pr_debug("usr sg list\n");
 		print_sg_list(usr_sg_tbl->sgl, usr_sg_tbl->nents);
-		printk("dev sg list\n");
+		pr_debug("dev sg list\n");
 		print_sg_list(dev_sg_ls, 1);
 #endif
 		tx = cdma_dev->device_prep_dma_sg(cdma_channel, dev_sg_ls, 1,
@@ -323,9 +323,9 @@ static int xdma_prep_memcpy(struct xdma_memcpy_info *memcpy_info) {
 		PRINT_DBG("dev sg dma addr 0x%llx\n", dev_sg_ls->dma_address);
 		sg_mark_end(dev_sg_ls);
 #ifdef DEBUG_PRINT
-		printk("usr sg list\n");
+		pr_debug("usr sg list\n");
 		print_sg_list(usr_sg_tbl->sgl, usr_sg_tbl->nents);
-		printk("dev sg list\n");
+		pr_debug("dev sg list\n");
 		print_sg_list(dev_sg_ls, 1);
 #endif
 
@@ -343,7 +343,7 @@ static int xdma_prep_memcpy(struct xdma_memcpy_info *memcpy_info) {
 //			flags);
 
 	if (!tx) {
-		printk(KERN_ERR "cdma error device_prep_dma_memcpy");
+		pr_err("cdma error device_prep_dma_memcpy");
 		ret = -1;
 		memcpy_info->cookie = -EBUSY;
 	} else {
@@ -351,7 +351,7 @@ static int xdma_prep_memcpy(struct xdma_memcpy_info *memcpy_info) {
 		tx->callback_param = cmp;
 		cookie = dmaengine_submit(tx);
 		if (dma_submit_error(cookie)) {
-			printk(KERN_ERR "cdma error: tx submit error\n");
+			pr_err("cdma error: tx submit error\n");
 			ret = -1;
 		}
 
@@ -402,16 +402,16 @@ static int xdma_prep_user_buffer(struct xdma_buf_info * buf_info)
 	dir = xdma_to_dma_direction(buf_info->dir);
 	flags = DMA_CTRL_ACK | DMA_PREP_INTERRUPT;
 
-	PRINT_DBG(KERN_DEBUG "Pinning buffer @%lx;%u\n", start, len);
+	PRINT_DBG("Pinning buffer @%lx;%u\n", start, len);
 
 	//Check that the address is valid
 	if (!access_ok(void*, (void*)start, len)) {
-		printk(KERN_DEBUG "<%s> Cannot access buffer @%lx:%u\n",
+		pr_debug("<%s> Cannot access buffer @%lx:%u\n",
 				XDMA_MODULE_NAME, start, len);
 		return -EFAULT;
 	}
 	if (len == 0) {
-		printk(KERN_DEBUG "<%s> Trying to transfer buffer with length 0 @%lx\n",
+		pr_debug("<%s> Trying to transfer buffer with length 0 @%lx\n",
 				XDMA_MODULE_NAME, start);
 		return -EINVAL;
 	}
@@ -420,7 +420,7 @@ static int xdma_prep_user_buffer(struct xdma_buf_info * buf_info)
 	if (!page_list) {
 		kfree(mem);
 		kfree(cmp);
-		printk(KERN_WARNING "<%s> Unable to allocate page list for buffer %lx\n",
+		pr_warn("<%s> Unable to allocate page list for buffer %lx\n",
 				XDMA_MODULE_NAME, start);
 		return -ENOMEM;
 	}
@@ -430,7 +430,7 @@ static int xdma_prep_user_buffer(struct xdma_buf_info * buf_info)
 
 	ret = sg_alloc_table(&mem->sg_tbl, nr_pages, GFP_KERNEL);
 	if (ret) {
-		printk("<%s> Coud not allocate SG table for buffer %lx\n",
+		pr_warn("<%s> Coud not allocate SG table for buffer %lx\n",
 				XDMA_MODULE_NAME, start);
 		return -ENOMEM;
 	}
@@ -446,7 +446,7 @@ static int xdma_prep_user_buffer(struct xdma_buf_info * buf_info)
 		PRINT_DBG("%d\n", ret);
 		if (ret < 0) {
 			//FIXME: free resources in case of error
-			printk(KERN_ERR "Error getting user pages from %lu\n", cur_base);
+			pr_err("Error getting user pages from %lu\n", cur_base);
 			return ret;
 		}
 
@@ -473,7 +473,7 @@ static int xdma_prep_user_buffer(struct xdma_buf_info * buf_info)
 	PRINT_DBG("Mapping %u pages and preparing transfer\n", nr_pages);
 	ret = dma_map_sg(dma_dev, mem->sg_tbl.sgl, nr_pages, dir);
 	if (ret <= 0) {
-		printk(KERN_ERR "Error mapping the transfer pages\n");
+		pr_err("Error mapping the transfer pages\n");
 		return -1;
 	}
 	tx_desc = dmaengine_prep_slave_sg(chan, mem->sg_tbl.sgl, nr_pages, dir, flags);
@@ -486,7 +486,7 @@ static int xdma_prep_user_buffer(struct xdma_buf_info * buf_info)
 	tx_desc->callback_param = cmp;
 	cookie = dmaengine_submit(tx_desc);
 	if (dma_submit_error(cookie)) {
-		printk(KERN_ERR "<%s> Error: tx_submit error\n",
+		pr_err("<%s> Error: tx_submit error\n",
 				XDMA_MODULE_NAME);
 		ret = -1;
 	}
@@ -513,8 +513,8 @@ static int xdma_user_buffer_release(struct xdma_sg_mem *mem)
 	//TODO: Error checking
 
 #ifdef DEBUG_PRINT
-	printk("unmap sg\n");
-	printk("is_coherent: %d\n", is_device_dma_coherent(cdma_dev->dev));
+	pr_debug("unmap sg\n");
+	pr_debug("is_coherent: %d\n", is_device_dma_coherent(cdma_dev->dev));
 	print_sg_list(mem->sg_tbl.sgl, mem->npages);
 #endif
 	dma_unmap_sg(cdma_dev->dev, mem->sg_tbl.sgl, mem->npages, mem->dir);
@@ -551,7 +551,7 @@ static int xdma_prep_buffer(struct xdma_buf_info *buf_info)
 	cmp = kmalloc(sizeof(struct completion), GFP_KERNEL);
 
 	if (!cmp) {
-		printk(KERN_ERR "Unable to allocate XDMA completion\n");
+		pr_err("Unable to allocate XDMA completion\n");
 	}
 	init_completion(cmp);
 	buf_info->completion = cmp;
@@ -571,8 +571,7 @@ static int xdma_prep_buffer(struct xdma_buf_info *buf_info)
 	chan_desc = dmaengine_prep_slave_single(chan, buf, len, dir, flags);
 
 	if (!chan_desc) {
-		printk(KERN_ERR
-		       "<%s> Error: dmaengine_prep_slave_single error\n",
+		pr_err("<%s> Error: dmaengine_prep_slave_single error\n",
 		       XDMA_MODULE_NAME);
 		ret = -1;
 		buf_info->cookie = -EBUSY;
@@ -584,7 +583,7 @@ static int xdma_prep_buffer(struct xdma_buf_info *buf_info)
 		//cookie = chan_desc->tx_submit(chan_desc);
 		cookie = dmaengine_submit(chan_desc);
 		if (dma_submit_error(cookie)) {
-			printk(KERN_ERR "<%s> Error: tx_submit error\n",
+			pr_err("<%s> Error: tx_submit error\n",
 			       XDMA_MODULE_NAME);
 			ret = -1;
 		}
@@ -619,12 +618,11 @@ static int xdma_start_transfer(struct xdma_transfer *trans)
 		tmo = wait_for_completion_timeout(cmp, tmo);
 		status = dma_async_is_tx_complete(chan, cookie, NULL, NULL);
 		if (0 == tmo) {
-			printk(KERN_ERR "<%s> Error: transfer timed out\n",
+			pr_err("<%s> Error: transfer timed out\n",
 			       XDMA_MODULE_NAME);
 			ret = -1;
 		} else if (status != DMA_COMPLETE) {
-			printk(KERN_DEBUG
-			       "<%s> transfer: returned completion callback status of: \'%s\'\n",
+			pr_debug("<%s> transfer: returned completion callback status of: \'%s\'\n",
 			       XDMA_MODULE_NAME,
 			       status == DMA_ERROR ? "error" : "in progress");
 			ret = -1;
@@ -666,12 +664,11 @@ static int xdma_finish_transfer(struct xdma_transfer *trans)
 		status = dma_async_is_tx_complete(chan, cookie, NULL, NULL);
 		PRINT_DBG("  Finished t left: %lu completed: %d\n", tmo, status == DMA_COMPLETE);
 		if (0 == tmo ) {
-			printk(KERN_ERR "<%s> Error: transfer timed out\n",
+			pr_err("<%s> Error: transfer timed out\n",
 				XDMA_MODULE_NAME);
 			ret = -1;
 		} else if (status != DMA_COMPLETE) {
-			printk(KERN_DEBUG
-				"<%s> transfer: returned completion callback status of: \'%s\'\n",
+			pr_debug("<%s> transfer: returned completion callback status of: \'%s\'\n",
 				XDMA_MODULE_NAME,
 				status == DMA_ERROR ? "error" : "in progress");
 			ret = -1;
@@ -711,7 +708,7 @@ static long xdma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	switch (cmd) {
 	case XDMA_GET_NUM_DEVICES:
-		PRINT_DBG(KERN_DEBUG "<%s> ioctl: XDMA_GET_NUM_DEVICES\n",
+		PRINT_DBG("<%s> ioctl: XDMA_GET_NUM_DEVICES\n",
 		       XDMA_MODULE_NAME);
 
 		devices = num_devices;
@@ -720,7 +717,7 @@ static long xdma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 		break;
 	case XDMA_GET_DEV_INFO:
-		PRINT_DBG(KERN_DEBUG "<%s> ioctl: XDMA_GET_DEV_INFO\n",
+		PRINT_DBG("<%s> ioctl: XDMA_GET_DEV_INFO\n",
 		       XDMA_MODULE_NAME);
 
 		if (copy_from_user((void *)&xdma_dev,
@@ -736,7 +733,7 @@ static long xdma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 		break;
 	case XDMA_DEVICE_CONTROL:
-		PRINT_DBG(KERN_DEBUG "<%s> ioctl: XDMA_DEVICE_CONTROL\n",
+		PRINT_DBG("<%s> ioctl: XDMA_DEVICE_CONTROL\n",
 		       XDMA_MODULE_NAME);
 
 		if (copy_from_user((void *)&chan_cfg,
@@ -747,7 +744,7 @@ static long xdma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		xdma_device_control(&chan_cfg);
 		break;
 	case XDMA_PREP_BUF:
-		PRINT_DBG(KERN_DEBUG "<%s> ioctl: XDMA_PREP_BUF\n", XDMA_MODULE_NAME);
+		PRINT_DBG("<%s> ioctl: XDMA_PREP_BUF\n", XDMA_MODULE_NAME);
 
 		if (copy_from_user((void *)&buf_info,
 				   (const void __user *)arg,
@@ -762,7 +759,7 @@ static long xdma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 		break;
 	case XDMA_START_TRANSFER:
-		PRINT_DBG(KERN_DEBUG "<%s> ioctl: XDMA_START_TRANSFER\n",
+		PRINT_DBG("<%s> ioctl: XDMA_START_TRANSFER\n",
 		       XDMA_MODULE_NAME);
 
 		if (copy_from_user((void *)&trans,
@@ -773,7 +770,7 @@ static long xdma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		ret = (long)xdma_start_transfer(&trans);
 		break;
 	case XDMA_STOP_TRANSFER:
-		PRINT_DBG(KERN_DEBUG "<%s> ioctl: XDMA_STOP_TRANSFER\n",
+		PRINT_DBG("<%s> ioctl: XDMA_STOP_TRANSFER\n",
 		       XDMA_MODULE_NAME);
 
 		if (copy_from_user((void *)&chan,
@@ -783,7 +780,7 @@ static long xdma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		xdma_stop_transfer((struct dma_chan *)chan);
 		break;
 	case XDMA_FINISH_TRANSFER:
-		PRINT_DBG(KERN_DEBUG "<%s> ioctl: XDMA_FINISHED_TRANSFER\n",
+		PRINT_DBG("<%s> ioctl: XDMA_FINISHED_TRANSFER\n",
 		        XDMA_MODULE_NAME);
 		if (copy_from_user((void *)&trans,
 				   (const void __user *)arg,
@@ -792,7 +789,7 @@ static long xdma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		ret = xdma_finish_transfer(&trans);
 		break;
 	case XDMA_PREP_USR_BUF:
-		PRINT_DBG(KERN_DEBUG "<%s> ioctl; XDMA_PREP_USR_BUFFER\n", XDMA_MODULE_NAME);
+		PRINT_DBG("<%s> ioctl; XDMA_PREP_USR_BUFFER\n", XDMA_MODULE_NAME);
 		if (copy_from_user((void *)&buf_info,
 					(const void __user *)arg,
 					sizeof(struct xdma_buf_info)))
@@ -805,7 +802,7 @@ static long xdma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			return -EFAULT;
 		break;
 	case XDMA_RELEASE_USR_BUF:
-		PRINT_DBG(KERN_DEBUG "<%s> ioctl: XDMA_RELEASE_USR_BUFFER\n", XDMA_MODULE_NAME);
+		PRINT_DBG("<%s> ioctl: XDMA_RELEASE_USR_BUFFER\n", XDMA_MODULE_NAME);
 		// The user parameter is already a pointer to the xdma_sg_mem structure
 		ret = xdma_user_buffer_release((struct xdma_sg_mem *)arg);
 
@@ -823,7 +820,7 @@ static long xdma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 
 	default:
-		printk(KERN_DEBUG "<%s> ioctl: WARNING unknown ioctl command %d\n", XDMA_MODULE_NAME, cmd);
+		pr_warn("<%s> ioctl: WARNING unknown ioctl command %d\n", XDMA_MODULE_NAME, cmd);
 		break;
 	}
 
@@ -884,15 +881,15 @@ static void xdma_init(void)
 	//init cdma engine
 	cdma_channel = dma_request_slave_channel(&ompss_at_fpga_pdev->dev, "cdma0");
 	if (!cdma_channel) {
-		printk(KERN_DEBUG "<" XDMA_MODULE_NAME "> No cdma devices found\n");
+		pr_warn("<" XDMA_MODULE_NAME "> No cdma devices found\n");
 	}
 
 	if (!has_dma) {
-		printk(KERN_INFO "<%s> No dma engines in current bitstream\n",
+		pr_err("<%s> No dma engines in current bitstream\n",
 				XDMA_MODULE_NAME);
 		return;
 	} else if (num_acc < 0) {
-		printk(KERN_ERR "<%s> The number of accelerators with dma engines cannot be determined. "
+		pr_err("<%s> The number of accelerators with dma engines cannot be determined. "
 				"Try reloading the kernel module or regenerate the bitstream with a newer Accelerator Integration Tool version\n",
 				XDMA_MODULE_NAME);
 		return;
@@ -906,8 +903,7 @@ static void xdma_init(void)
 		rx_chan = dma_request_slave_channel(&ompss_at_fpga_pdev->dev, chan_from_name);
 
 		if (!tx_chan && !rx_chan) {
-			printk(KERN_DEBUG
-			       "<%s> probe: %d devices found of %d expected\n",
+			pr_warn("<%s> probe: %d devices found of %d expected\n",
 			       XDMA_MODULE_NAME, num_devices, num_acc);
 			break;
 		} else {
@@ -951,8 +947,7 @@ static void xdma_init(void)
 			(void *)&match_rx);
 
 		if (!tx_chan && !rx_chan) {
-			printk(KERN_DEBUG
-			       "<%s> probe: number of devices found: %d\n",
+			pr_debug("<%s> probe: number of devices found: %d\n",
 			       XDMA_MODULE_NAME, num_devices);
 			break;
 		} else {
@@ -1005,12 +1000,12 @@ int xdma_probe(struct platform_device *pdev)
 
 	/* device constructor */
 	if (alloc_chrdev_region(&dev_num, 0, 1 /*num_devices*/, XDMA_MODULE_NAME) < 0) {
-		printk(KERN_ERR "<%s> Could not allocate region for xdma device\n",
+		pr_err("<%s> Could not allocate region for xdma device\n",
 			MODULE_NAME);
 		goto xdma_alloc_chrdev_err;
 	}
 	if ((cl = class_create(THIS_MODULE, XDMA_MODULE_NAME)) == NULL) {
-		printk(KERN_ERR "<%s> Could not create xdma device class\n",
+		pr_err("<%s> Could not create xdma device class\n",
 			MODULE_NAME);
 		goto xdma_class_err;
 	}
@@ -1018,13 +1013,13 @@ int xdma_probe(struct platform_device *pdev)
 	dma_dev = device_create(cl, &ompss_at_fpga_pdev->dev, dev_num, NULL,
 			DEV_PREFIX "/" XDMA_DEV_NAME);
 	if (dma_dev == NULL) {
-		printk(KERN_ERR "<%s> Could not create xdma device\n",
+		pr_err("<%s> Could not create xdma device\n",
 			MODULE_NAME);
 		goto xdma_dev_err;
 	}
 	cdev_init(&c_dev, &fops);
 	if (cdev_add(&c_dev, dev_num, 1) == -1) {
-		printk(KERN_ERR "<%s> Could not add xdma device\n",
+		pr_err("<%s> Could not add xdma device\n",
 			MODULE_NAME);
 		goto xdma_cdev_err;
 	}
@@ -1047,7 +1042,7 @@ xdma_alloc_chrdev_err:
 int xdma_remove(struct platform_device *pdev)
 {
 	if (xdma_opens_cnt != 0) {
-		printk(KERN_INFO "<%s> remove: Opens counter is not zero\n", XDMA_MODULE_NAME);
+		pr_info("<%s> remove: Opens counter is not zero\n", XDMA_MODULE_NAME);
 	}
 
 	if (cl == NULL) {
