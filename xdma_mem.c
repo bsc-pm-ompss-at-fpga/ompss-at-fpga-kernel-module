@@ -42,7 +42,7 @@
 //#define DEBUG_PRINT 1
 
 #ifdef DEBUG_PRINT
-#define PRINT_DBG(...) printk( __VA_ARGS__)
+#define PRINT_DBG(...) pr_debug( __VA_ARGS__)
 #else
 #define PRINT_DBG(...)
 #endif
@@ -144,8 +144,7 @@ static int xdmamem_mmap(struct file *filp, struct vm_area_struct *vma)
 //	PRINT_DBG("  virt_to_phys: %p __pv_phys_pfn_offset: %x\n",
 //			virt_to_phys(buffer_addr), __pv_phys_pfn_offset);
 	if (result) {
-		printk(KERN_ERR
-		       "<%s> Error: in calling remap_pfn_range: returned %d\n",
+		pr_err("<%s> Error: in calling remap_pfn_range: returned %d\n",
 		       XDMAMEM_MODULE_NAME, result);
 
 		return -EAGAIN;
@@ -206,7 +205,7 @@ static long xdmamem_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 	switch (cmd) {
 	case XDMAMEM_GET_LAST_KBUF:
 		if (!access_ok(void*, (void*)arg, sizeof(void*))) {
-			printk(KERN_DEBUG "<%s> Cannot access user variable @0x%lx",
+			pr_debug("<%s> Cannot access user variable @0x%lx",
 					XDMAMEM_MODULE_NAME, arg);
 			return -EFAULT;
 		}
@@ -218,7 +217,7 @@ static long xdmamem_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 	case XDMAMEM_RELEASE_KBUF:
 		PRINT_DBG(KERN_DEBUG "<%s> ioctl: XDMAMEM_RELEASE_KBUFF\n", XDMAMEM_MODULE_NAME);
 		if (!access_ok(void*, (void*)arg, sizeof(void*))) {
-			printk(KERN_DEBUG "<%s> Cannot access user variable @0x%lx",
+			pr_debug("<%s> Cannot access user variable @0x%lx",
 					XDMAMEM_MODULE_NAME, arg);
 			return -EFAULT;
 		}
@@ -229,7 +228,7 @@ static long xdmamem_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 	case XDMAMEM_GET_DMA_ADDRESS:
 		PRINT_DBG(KERN_DEBUG "<%s> ioctl: XDMAMEM_GET_DMA_ADDRESS\n", XDMAMEM_MODULE_NAME);
 		if (!access_ok(void*, (void*)arg, sizeof(void*))) {
-			printk(KERN_DEBUG "<%s> Cannot access user variable @0x%lx",
+			pr_debug("<%s> Cannot access user variable @0x%lx",
 					XDMAMEM_MODULE_NAME, arg);
 			return -EFAULT;
 		}
@@ -242,7 +241,7 @@ static long xdmamem_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 		break;
 
 	default:
-		printk(KERN_DEBUG "<%s> ioctl: WARNING unknown ioctl command %d\n", XDMAMEM_MODULE_NAME, cmd);
+		pr_debug("<%s> ioctl: WARNING unknown ioctl command %d\n", XDMAMEM_MODULE_NAME, cmd);
 		break;
 	}
 
@@ -306,7 +305,7 @@ static int dev_mem_map_io(struct device_node *hwruntime_node) {
 	of_node_put(dev_node);
 	dev_mem_io_addr = (unsigned long)dev_mem_space[0];
 	if (status < 0) {
-		printk(KERN_WARNING "<%s> Could not read address of '%s'\n",
+		pr_warn("<%s> Could not read address of '%s'\n",
 				MODULE_NAME, DEV_MEM_PHANDLE_NAME);
 		goto devmem_of_err;
 	}
@@ -327,13 +326,13 @@ int xdmamem_probe(struct platform_device *pdev)
 
 	/* device constructor */
 	if (alloc_chrdev_region(&dev_num, 0, XDMAMEM_NUM_DEVICES, XDMAMEM_MODULE_NAME) < 0) {
-		printk(KERN_ERR "<%s> Could not allocate region for xdma_mem device\n",
+		pr_err("<%s> Could not allocate region for xdma_mem device\n",
 			MODULE_NAME);
 		goto xdmamem_alloc_chrdev_err;
 	}
 	xdmamem_major = MAJOR(dev_num);
 	if ((cl = class_create(THIS_MODULE, XDMAMEM_MODULE_NAME)) == NULL) {
-		printk(KERN_ERR "<%s> Could not create xdma_mem device class\n",
+		pr_err("<%s> Could not create xdma_mem device class\n",
 			MODULE_NAME);
 		goto xdmamem_class_err;
 	}
@@ -341,13 +340,13 @@ int xdmamem_probe(struct platform_device *pdev)
 	dma_dev = device_create(cl, &xdmamem_pdev->dev, dev_num, NULL,
 			DEV_PREFIX "/" XDMAMEM_DEV_NAME);
 	if (dma_dev == NULL) {
-		printk(KERN_ERR "<%s> Could not create xdma_mem device\n",
+		pr_err("<%s> Could not create xdma_mem device\n",
 			MODULE_NAME);
 		goto xdmamem_dev_err;
 	}
 	cdev_init(&c_dev, &fops);
 	if (cdev_add(&c_dev, dev_num, 1) == -1) {
-		printk(KERN_ERR "<%s> Could not add xdma_mem device\n",
+		pr_err("<%s> Could not add xdma_mem device\n",
 			MODULE_NAME);
 		goto xdmamem_cdev_err;
 	}
@@ -375,13 +374,13 @@ int xdmamem_probe(struct platform_device *pdev)
 			MKDEV(xdmamem_major, XDMAMEM_DEV_MEM_MINOR), NULL,
 			DEV_PREFIX "/" XDMAMEM_DEV_MEM_NAME);
 	if (dev_mem_dev == NULL) {
-		printk("<%s> Error mapping device address space\n", MODULE_NAME);
+		pr_err("<%s> Error mapping device address space\n", MODULE_NAME);
 		goto xdmamem_dev_mem_err;
 	}
 
 	cdev_init(&cdev_dev_mem, &devmem_fops);
 	if (cdev_add(&cdev_dev_mem, MKDEV(xdmamem_major, XDMAMEM_DEV_MEM_MINOR), 1) < 0) {
-		printk("<%s> Could not add xdma_dev_mem device\n", MODULE_NAME);
+		pr_err("<%s> Could not add xdma_dev_mem device\n", MODULE_NAME);
 		goto xdmamem_dev_mem_cdev_err;
 	}
 
@@ -405,7 +404,7 @@ xdmamem_alloc_chrdev_err:
 int xdmamem_remove(struct platform_device *pdev)
 {
 	if (xdmamem_opens_cnt != 0) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_err("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, XDMAMEM_DEV_NAME);
 	}
 

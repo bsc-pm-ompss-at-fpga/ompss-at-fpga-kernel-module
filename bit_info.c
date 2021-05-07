@@ -25,6 +25,7 @@
 #include <linux/cdev.h>
 #include <linux/mm.h>
 #include <linux/kdev_t.h>
+#include <linux/slab.h>
 #include <asm/io.h>
 
 #include "ompss_fpga_common.h"
@@ -39,10 +40,7 @@
 #define BITINFO_XTASKS_NAME      "xtasks"
 #define BITINFO_F_RAW_NAME       "features/raw"
 #define BITINFO_F_INS_NAME       "features/hwcounter"
-#define BITINFO_F_DMA_NAME       "features/dma"
 #define BITINFO_F_INOPT_NAME     "features/intercon_opt"
-#define BITINFO_F_INLEV_NAME     "features/intercon_level"
-#define BITINFO_F_HWR_NAME       "features/hwruntime"
 #define BITINFO_F_EHWR_NAME      "features/hwruntime_ext"
 #define BITINFO_F_SOM_NAME       "features/hwruntime_som"
 #define BITINFO_F_POM_NAME       "features/hwruntime_pom"
@@ -71,10 +69,7 @@
 #define BITINFO_XTASKS_MINOR      2
 #define BITINFO_F_RAW_MINOR       5
 #define BITINFO_F_INS_MINOR       6
-#define BITINFO_F_DMA_MINOR       9
 #define BITINFO_F_INOPT_MINOR     11
-#define BITINFO_F_INLEV_MINOR     10
-#define BITINFO_F_HWR_MINOR       7
 #define BITINFO_F_EHWR_MINOR      8
 #define BITINFO_F_SOM_MINOR       15
 #define BITINFO_F_POM_MINOR       14
@@ -97,56 +92,48 @@
 #define BITINFO_HWRIO_CNT_A_MINOR 28
 
 #define BITINFO_REV_IDX          0
-#define BITINFO_MIN_REV          4
-#define BITINFO_MAX_REV          7
-#define BITINFO_F_DMA_IDX        1
+#define BITINFO_MIN_REV          8
+#define BITINFO_MAX_REV          8
 
 #define BITINFO_F_INS_BIT        0
-#define BITINFO_F_EHWR_BIT       6
+#define BITINFO_F_EHWR_BIT       7
 #define BITMASK_LOWEST_BIT       0x00000001
 #define BITINFO_HWRIO_STRUCT_SIZE (16*sizeof(u32))
 
-//NOTE: The value '0' means that the information is not available in those revision
-//NOTE: Revision '0' is not valid and it is used as a control revision
-static const u8 BITINFO_NUMACCS_IDX[]   = {0, 0, 1, 1, 1, 1, 1, 1};
-static const u8 BITINFO_XTASKS_IDX[]    = {0, 1, 2, 2, 2, 2, 2, 2};
-static const u8 BITINFO_F_RAW_IDX[]     = {0, 2, 3, 3, 3, 3, 3, 3};
-static const u8 BITINFO_CALL_IDX[]      = {0, 3, 4, 4, 4, 4, 4, 4};
-static const u8 BITINFO_AV_IDX[]        = {0, 0, 0, 0, 5, 5, 5, 5};
-static const u8 BITINFO_WRAPPER_IDX[]   = {0, 0, 0, 5, 6, 6, 6, 6};
-static const u8 BITINFO_HWR_VLNV_IDX[]  = {0, 0, 0, 0, 0, 7, 7, 7};
-static const u8 BITINFO_BASE_FREQ_IDX[] = {0, 0, 0, 0, 0, 0, 8, 8};
-static const u8 BITINFO_HWRIO_IDX[]     = {0, 0, 0, 0, 0, 0, 0, 9};
+#define BITINFO_NUMACCS_IDX   1
+#define BITINFO_XTASKS_IDX    22
+#define BITINFO_F_RAW_IDX     2
+#define BITINFO_CALL_IDX      23
+#define BITINFO_AV_IDX        3
+#define BITINFO_WRAPPER_IDX   4
+#define BITINFO_HWR_VLNV_IDX  24
+#define BITINFO_BASE_FREQ_IDX 5
+#define BITINFO_HWRIO_IDX     6
 
 static dev_t bitinfo_devt;
 static struct class *bitinfo_cl;
 static struct cdev bitinfo_raw_cdev, bitinfo_rev_cdev, bitinfo_numaccs_cdev, bitinfo_xtasks_cdev,
-	bitinfo_f_raw_cdev, bitinfo_f_ins_cdev, bitinfo_f_dma_cdev, bitinfo_f_inopt_cdev,
-	bitinfo_f_inlev_cdev, bitinfo_f_hwr_cdev, bitinfo_f_ehwr_cdev, bitinfo_f_som_cdev,
-	bitinfo_f_pom_cdev, bitinfo_call_cdev, bitinfo_ait_cdev, bitinfo_wrapper_cdev,
-	bitinfo_hwr_vlnv_cdev, bitinfo_base_freq_cdev, bitinfo_hwrio_raw_cdev, bitinfo_hwrio_ci_a_cdev,
-	bitinfo_hwrio_ci_l_cdev, bitinfo_hwrio_co_a_cdev, bitinfo_hwrio_co_l_cdev, bitinfo_hwrio_si_a_cdev,
-	bitinfo_hwrio_si_l_cdev, bitinfo_hwrio_so_a_cdev, bitinfo_hwrio_so_l_cdev, bitinfo_hwrio_rst_a_cdev,
-	bitinfo_hwrio_cnt_a_cdev;
+	bitinfo_f_raw_cdev, bitinfo_f_ins_cdev, bitinfo_f_inopt_cdev, bitinfo_f_ehwr_cdev,
+	bitinfo_f_som_cdev, bitinfo_f_pom_cdev, bitinfo_call_cdev, bitinfo_ait_cdev,
+	bitinfo_wrapper_cdev, bitinfo_hwr_vlnv_cdev, bitinfo_base_freq_cdev, bitinfo_hwrio_raw_cdev,
+	bitinfo_hwrio_ci_a_cdev, bitinfo_hwrio_ci_l_cdev, bitinfo_hwrio_co_a_cdev, bitinfo_hwrio_co_l_cdev,
+	bitinfo_hwrio_si_a_cdev, bitinfo_hwrio_si_l_cdev, bitinfo_hwrio_so_a_cdev, bitinfo_hwrio_so_l_cdev,
+	bitinfo_hwrio_rst_a_cdev, bitinfo_hwrio_cnt_a_cdev;
 
 static struct device *bitinfo_raw_dev, *bitinfo_rev_dev, *bitinfo_numaccs_dev, *bitinfo_xtasks_dev,
-	*bitinfo_f_raw_dev, *bitinfo_f_ins_dev, *bitinfo_f_dma_dev, *bitinfo_f_inopt_dev,
-	*bitinfo_f_inlev_dev, *bitinfo_f_hwr_dev, *bitinfo_f_ehwr_dev, *bitinfo_f_som_dev,
-	*bitinfo_f_pom_dev, *bitinfo_call_dev, *bitinfo_ait_dev, *bitinfo_wrapper_dev,
-	*bitinfo_hwr_vlnv_dev, *bitinfo_base_freq_dev, *bitinfo_hwrio_raw_dev, *bitinfo_hwrio_ci_a_dev,
-	*bitinfo_hwrio_ci_l_dev, *bitinfo_hwrio_co_a_dev, *bitinfo_hwrio_co_l_dev, *bitinfo_hwrio_si_a_dev,
-	*bitinfo_hwrio_si_l_dev, *bitinfo_hwrio_so_a_dev, *bitinfo_hwrio_so_l_dev, *bitinfo_hwrio_rst_a_dev,
-	*bitinfo_hwrio_cnt_a_dev;
+	*bitinfo_f_raw_dev, *bitinfo_f_ins_dev, *bitinfo_f_inopt_dev, *bitinfo_f_ehwr_dev,
+	*bitinfo_f_som_dev, *bitinfo_f_pom_dev, *bitinfo_call_dev, *bitinfo_ait_dev,
+	*bitinfo_wrapper_dev, *bitinfo_hwr_vlnv_dev, *bitinfo_base_freq_dev, *bitinfo_hwrio_raw_dev,
+	*bitinfo_hwrio_ci_a_dev, *bitinfo_hwrio_ci_l_dev, *bitinfo_hwrio_co_a_dev, *bitinfo_hwrio_co_l_dev,
+	*bitinfo_hwrio_si_a_dev, *bitinfo_hwrio_si_l_dev, *bitinfo_hwrio_so_a_dev, *bitinfo_hwrio_so_l_dev,
+	*bitinfo_hwrio_rst_a_dev, *bitinfo_hwrio_cnt_a_dev;
 
 static int bitinfo_rev_opens_cnt;         // Opens counter of revision device
 static int bitinfo_numaccs_opens_cnt;     // Opens counter of num_accs device
 static int bitinfo_xtasks_opens_cnt;      // Opens counter of xtasks device
 static int bitinfo_f_raw_opens_cnt;       // Opens counter of features/raw device
 static int bitinfo_f_ins_opens_cnt;       // Opens counter of features/hwcounter device
-static int bitinfo_f_dma_opens_cnt;       // Opens counter of features/dma device
 static int bitinfo_f_inopt_opens_cnt;     // Opens counter of features/intercon_opt device
-static int bitinfo_f_inlev_opens_cnt;     // Opens counter of features/intercon_level device
-static int bitinfo_f_hwr_opens_cnt;       // Opens counter of features/hwruntime device
 static int bitinfo_f_ehwr_opens_cnt;      // Opens counter of features/hwruntime_ext device
 static int bitinfo_f_som_opens_cnt;       // Opens counter of features/hwruntime_som device
 static int bitinfo_f_pom_opens_cnt;       // Opens counter of features/hwruntime_pom device
@@ -169,26 +156,27 @@ static int bitinfo_hwrio_rst_a_opens_cnt; // Opens counter of hwruntime_io/rst_a
 static int bitinfo_hwrio_cnt_a_opens_cnt; // Opens counter of hwruntime_io/counter_address device
 static int bitinfo_major;
 
-void __iomem * bitinfo_io_addr;
+u32 __iomem * bitinfo_io_addr;
+char* xtasks_config;
+static int xtasks_config_lock;
+static size_t xtasks_config_size;
 
-int read_hwruntime_addr_from_bitinfo(int rev, const char* phandle_name, int extended_queue, int bitinfo_addr_offset, unsigned long* dev_mem_space) {
-	u8 field_idx = BITINFO_F_RAW_IDX[rev];
-	if (!extended_queue || (readl(get_n_field_ptr(field_idx)) >> BITINFO_F_EHWR_BIT) & BITMASK_LOWEST_BIT) { //Extended hwruntime enabled
+int read_hwruntime_addr_from_bitinfo(const char* phandle_name, int extended_queue, int bitinfo_addr_offset, unsigned long* dev_mem_space) {
+	u32* bitinfo_ptr = bitinfo_io_addr + BITINFO_HWRIO_IDX;
+	if (!extended_queue || (readl(bitinfo_io_addr + BITINFO_F_RAW_IDX) >> BITINFO_F_EHWR_BIT) & BITMASK_LOWEST_BIT) { //Extended hwruntime enabled
 		//NOTE: The size of the queue is not read because it is not used in this driver
-		u32* bitinfo_ptr = get_n_field_ptr(BITINFO_HWRIO_IDX[rev]);
 		*dev_mem_space = readl(bitinfo_ptr + bitinfo_addr_offset) |
-							((unsigned long)readl(bitinfo_ptr + bitinfo_addr_offset+1) << 32);
+							((unsigned long)readl(bitinfo_ptr + bitinfo_addr_offset + 1) << 32);
 	} else {
 		return 0;
 	}
 	return 1;
 }
 
-int read_hwcounter_addr_from_bitinfo(int rev, unsigned long* hwcounter_phy_addr) {
-	u8 field_idx = BITINFO_F_RAW_IDX[rev];
-	u32 bitinfo_features = readl(get_n_field_ptr(field_idx));
+int read_hwcounter_addr_from_bitinfo(unsigned long* hwcounter_phy_addr) {
+	u32 bitinfo_features = readl(bitinfo_io_addr + BITINFO_F_RAW_IDX);
 	if ((bitinfo_features >> BITINFO_F_INS_BIT) & BITMASK_LOWEST_BIT) { //Hw instrumentation enabled
-		u32* bitinfo_ptr = get_n_field_ptr(BITINFO_HWRIO_IDX[rev]);
+		u32* bitinfo_ptr = bitinfo_io_addr + BITINFO_HWRIO_IDX;
 		*hwcounter_phy_addr = readl(bitinfo_ptr + HWCOUNTER_BITINFO_ADDR_OFFSET) | ((unsigned long)readl(bitinfo_ptr + HWCOUNTER_BITINFO_ADDR_OFFSET+1) << 32);
 	} else { //Hw instrumentation disabled
 		return 0;
@@ -200,25 +188,16 @@ u32 * get_n_field_ptr(const u8 n) {
 	u8 num_sep;
 	u32 * ptr, * max_ptr;
 
-	if (n == 0) {
-		//0th field: starts at the begining
-		ptr = (u32 *)bitinfo_io_addr;
-	} else if (n == 1) {
-		//1st field: starts at the 2nd word
-		ptr = (u32 *)(bitinfo_io_addr) + 2;
-	} else {
-		num_sep = 1;
-		ptr = (u32 *)(bitinfo_io_addr) + 3 /*start after 1st field*/;
-		max_ptr = (u32 *)(bitinfo_io_addr) + BITINFO_MAX_WORDS; //< Put some limit to avoid spin forever over wrong data
-
-		while (num_sep < n && ptr < max_ptr) {
-			if (readl(ptr++) == BITINFO_FIELD_SEP) num_sep++;
-		}
-		if (ptr >= max_ptr) {
-			ptr = (u32 *)0;
-			printk(KERN_ERR "<%s> Uncontrolled path in get_n_field_ptr. n=%u,num_sep=%u\n",
-				MODULE_NAME, (unsigned int)n, (unsigned int)num_sep);
-		}
+	num_sep = 22;
+	ptr = bitinfo_io_addr + 22 /*start after 22th field*/;
+	max_ptr = bitinfo_io_addr + BITINFO_MAX_WORDS; //< Put some limit to avoid spin forever over wrong data
+	while (num_sep < n && ptr < max_ptr) {
+		if (readl(ptr++) == BITINFO_FIELD_SEP) num_sep++;
+	}
+	if (ptr >= max_ptr) {
+		ptr = (u32 *)0;
+		pr_err( "<%s> Uncontrolled path in get_n_field_ptr. n=%u,num_sep=%u\n",
+			MODULE_NAME, (unsigned int)n, (unsigned int)num_sep);
 	}
 
 	return ptr;
@@ -226,9 +205,9 @@ u32 * get_n_field_ptr(const u8 n) {
 
 int bitinfo_get_rev() {
 	//NOTE: If the read value seems invalid return a 0
-	const int rev = readl(get_n_field_ptr(BITINFO_REV_IDX));
+	const int rev = readl(bitinfo_io_addr + BITINFO_REV_IDX);
 	if (rev < BITINFO_MIN_REV || rev > BITINFO_MAX_REV) {
-		printk(KERN_ERR "<%s> Unsupported bitinfo revision %d. Supported versions are [%d, %d]\n",
+		pr_err( "<%s> Unsupported bitinfo revision %d. Supported versions are [%d, %d]\n",
 			MODULE_NAME, rev, BITINFO_MIN_REV, BITINFO_MAX_REV);
 		return 0;
 	} else {
@@ -237,19 +216,7 @@ int bitinfo_get_rev() {
 }
 
 int bitinfo_get_num_acc() {
-	const u8 field_idx = BITINFO_NUMACCS_IDX[bitinfo_get_rev()];
-	//NOTE: If field_idx is 0, the number of accelerators field is not available
-	return field_idx != 0 ? readl(get_n_field_ptr(field_idx)) : -1;
-}
-
-int bitinfo_dma_enabled() {
-	u8 field_idx;
-	u32 * field_ptr;
-
-	field_idx = BITINFO_F_RAW_IDX[bitinfo_get_rev()];
-	if (field_idx == 0) return -1;
-	field_ptr = get_n_field_ptr(field_idx);
-	return field_ptr ? ((readl(field_ptr)>>BITINFO_F_DMA_IDX)&1 /*Select DMA capability bit*/) : 0;
+	return readl(bitinfo_io_addr + BITINFO_NUMACCS_IDX);
 }
 
 static ssize_t copy_field_data(u32 *data_ptr, char __user *buffer, size_t length, loff_t *offset) {
@@ -341,18 +308,13 @@ static ssize_t copy_field_u64(u64 value, char __user *buffer, size_t length, lof
 
 static ssize_t bitinfo_f_n_read(const size_t first_bit_idx, const size_t num_bits, char __user *buffer, size_t length, loff_t *offset) {
 	u32 data;
-	u32 * field_ptr;
 	size_t i, write_cnt;
 	//NOTE: num_bits of bitmask + 1 endl + 1 string terminator
 	char data_buffer[num_bits + 2];
-	const u8 field_idx = BITINFO_F_RAW_IDX[bitinfo_get_rev()];
 
-	if (*offset > (num_bits + 2) || field_idx == 0) return 0;
+	if (*offset > (num_bits + 2)) return 0;
 
-	field_ptr = get_n_field_ptr(field_idx);
-	if (!field_ptr) return 0;
-
-	data = readl(field_ptr);
+	data = readl(bitinfo_io_addr + BITINFO_F_RAW_IDX);
 	for (i = 0; i < num_bits; i++) {
 		data_buffer[i] = '0' + ((data&BIT(first_bit_idx + num_bits - i - 1)) != 0);
 	}
@@ -392,16 +354,101 @@ static ssize_t bitinfo_numaccs_read(struct file *filp, char __user *buffer, size
 }
 
 static int bitinfo_xtasks_open(struct inode *i, struct file *f) {
-	return generic_open(&bitinfo_xtasks_opens_cnt, 1000 /*max_opens*/, BITINFO_XTASKS_NAME);
+	int ret = generic_open(&bitinfo_xtasks_opens_cnt, 1000 /*max_opens*/, BITINFO_XTASKS_NAME);
+	if (ret < 0) {
+		return ret;
+	}
+
+	while (__sync_lock_test_and_set(&xtasks_config_lock, 1)) {
+		while (xtasks_config_lock);
+	}
+
+	if (xtasks_config == NULL) {
+		u32* xtasks_bin = bitinfo_io_addr + BITINFO_XTASKS_IDX;
+		int n = 0;
+		int i;
+		int ntasktypes;
+		int xtasks_config_offset;
+		u32 word;
+		do {
+			word = readl(xtasks_bin++);
+			++n;
+		} while (word != BITINFO_FIELD_SEP);
+		xtasks_bin = bitinfo_io_addr + BITINFO_XTASKS_IDX;
+
+		ntasktypes = n/11; // 11 32-bit words per task type
+		xtasks_config_offset = 20; // 20 header characters
+		xtasks_config_size = ntasktypes*60 + 20 + 1; // 60 characters per task type + 20 header characters + 1 string terminator
+		xtasks_config = (char*)kmalloc(xtasks_config_size, GFP_KERNEL);
+		if (xtasks_config == NULL) {
+			__sync_sub_and_fetch(&bitinfo_xtasks_opens_cnt, 1);
+			__sync_lock_release(&xtasks_config_lock);
+			pr_err("<%s> Could not allocate memory for xtasks_config", MODULE_NAME);
+			return -ENOMEM;
+		}
+
+		sprintf(xtasks_config, "type\t#ins\tname\tfreq\n");
+		
+		for (i = 0; i < ntasktypes; ++i) {
+			int j;
+			u32 first_word = readl(xtasks_bin++);
+			u32 second_word = readl(xtasks_bin++);
+			u32 third_word = readl(xtasks_bin++);
+			// ninstances = first_word[15:0]
+			int ninstances = first_word & 0xFFFF;
+			// task_type = {second_word[23:0], first_word[31:16]}
+			u64 task_type = (first_word >> 16) | (((u64)second_word & 0xFFFFFF) << 16);
+			// acc_freq = {third_word[15:0], second_word[31:24]}
+			int acc_freq = (second_word >> 24) | ((third_word & 0xFFFF) << 8);
+			int char_offset = 0;
+			u32 cur_word = readl(xtasks_bin++);
+			sprintf(xtasks_config + xtasks_config_offset, "%019llu\t%03d\t", task_type, ninstances);
+			xtasks_config_offset += 24;
+			for (j = 0; j < 31; ++j) {
+				xtasks_config[xtasks_config_offset++] = (cur_word >> char_offset*8) & 0xFF;
+				if ((j+1)%sizeof(u32) == 0) {
+					char_offset = 0;
+					cur_word = readl(xtasks_bin++);
+				} else {
+					char_offset++;
+				}
+			}
+			// bitinfo freq in KHz, xtasks_config expects MHz
+			sprintf(xtasks_config + xtasks_config_offset, "\t%03d\n", acc_freq/1000);
+			xtasks_config_offset += 5;
+		}
+	}
+
+	__sync_lock_release(&xtasks_config_lock);
+
+	return 0;
 }
 
 static int bitinfo_xtasks_close(struct inode *i, struct file *f) {
-	return generic_close(&bitinfo_xtasks_opens_cnt, BITINFO_XTASKS_NAME);
+	int ret = generic_close(&bitinfo_xtasks_opens_cnt, BITINFO_XTASKS_NAME);
+
+	while (__sync_lock_test_and_set(&xtasks_config_lock, 1)) {
+		while (xtasks_config_lock);
+	}
+
+	if (bitinfo_xtasks_opens_cnt == 0) {
+		kfree(xtasks_config);
+		xtasks_config = NULL;
+	}
+
+	__sync_lock_release(&xtasks_config_lock);
+	return ret;
 }
 
 static ssize_t bitinfo_xtasks_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset) {
-	const u8 field_idx = BITINFO_XTASKS_IDX[bitinfo_get_rev()];
-	return copy_field_data(get_n_field_ptr(field_idx), buffer, length, offset);
+	int rd_cnt;
+	if (*offset >= xtasks_config_size) {
+		return 0;
+	}
+	rd_cnt = min(length, (size_t)(xtasks_config_size-*offset));
+	rd_cnt -= copy_to_user(buffer, &xtasks_config[*offset], rd_cnt);
+	*offset += rd_cnt;
+	return rd_cnt;
 }
 
 static int bitinfo_call_open(struct inode *i, struct file *f) {
@@ -413,8 +460,7 @@ static int bitinfo_call_close(struct inode *i, struct file *f) {
 }
 
 static ssize_t bitinfo_call_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset) {
-	const u8 field_idx = BITINFO_CALL_IDX[bitinfo_get_rev()];
-	return copy_field_data(get_n_field_ptr(field_idx), buffer, length, offset);
+	return copy_field_data(get_n_field_ptr(BITINFO_CALL_IDX), buffer, length, offset);
 }
 
 static int bitinfo_ait_open(struct inode *i, struct file *f) {
@@ -430,24 +476,15 @@ static ssize_t bitinfo_ait_read(struct file *filp, char __user *buffer, size_t l
 	//NOTE: u16 can be represented with 5 chars (x2) + 1 dot + 1 endl + 1 string terminator
 	char data_buffer[13];
 	u32 major, minor;
-	u32 * field_ptr;
-	u8 field_idx;
 
-	field_idx = BITINFO_AV_IDX[bitinfo_get_rev()];
-	field_ptr = get_n_field_ptr(field_idx);
-	if (field_idx == 0 || !field_ptr) {
-		//NOTE: The field is not available in the currently loaded bitstream
-		data_cnt = sprintf(data_buffer, "?\n") + 1 /*string terminator*/;
-	} else {
-		minor = *field_ptr;
-		major = (minor >> 16)&0xFFFF;
-		minor = minor&0xFFFF;
-		data_cnt = sprintf(data_buffer, "%u.%u\n", major, minor) + 1 /*string terminator*/;
-	}
+	minor = readl(bitinfo_io_addr + BITINFO_AV_IDX);
+	major = (minor >> 16)&0xFFFF;
+	minor = minor&0xFFFF;
+	data_cnt = sprintf(data_buffer, "%u.%u\n", major, minor) + 1 /*string terminator*/;
 
 	//Copy the string to user buffer
 	if (*offset > data_cnt) return 0;
-	write_cnt =  min(length, (size_t)(data_cnt - *offset));
+	write_cnt = min(length, (size_t)(data_cnt - *offset));
 	write_cnt -= copy_to_user(buffer, &data_buffer[*offset], write_cnt);
 	*offset += write_cnt;
 
@@ -463,8 +500,7 @@ static int bitinfo_hwr_vlnv_close(struct inode *i, struct file *f) {
 }
 
 static ssize_t bitinfo_hwr_vlnv_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset) {
-	const u8 field_idx = BITINFO_HWR_VLNV_IDX[bitinfo_get_rev()];
-	return copy_field_data(get_n_field_ptr(field_idx), buffer, length, offset);
+	return copy_field_data(get_n_field_ptr(BITINFO_HWR_VLNV_IDX), buffer, length, offset);
 }
 
 static int bitinfo_base_freq_open(struct inode *i, struct file *f) {
@@ -476,29 +512,12 @@ static int bitinfo_base_freq_close(struct inode *i, struct file *f) {
 }
 
 static ssize_t bitinfo_base_freq_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset) {
-	const u8 field_idx = BITINFO_BASE_FREQ_IDX[bitinfo_get_rev()];
-	int base_freq = field_idx != 0 ? readl(get_n_field_ptr(field_idx)) : -1;
+	int base_freq = readl(bitinfo_io_addr + BITINFO_BASE_FREQ_IDX);
 	return copy_field_int32(base_freq, buffer, length, offset);
 }
 
-int bitinfo_hwrio_generic_open(int *opens_cnt, const char* dev_name) {
-	int status, rev;
-	status = generic_open(opens_cnt, 1000 /*max_opens*/, dev_name);
-	if (status) {
-		return status;
-	}
-	rev = bitinfo_get_rev();
-	if (rev == 0) { //Error reading bitinfo
-		return -1;
-	} else if (rev < BITINFO_MIN_DYNAMIC_REV) {
-		printk(KERN_ERR "<%s> Tried to open device %s, but loaded bitstream is old\n", MODULE_NAME, dev_name);
-		return -ENODEV;
-	}
-	return 0;
-}
-
 static int bitinfo_hwrio_raw_open(struct inode *i, struct file *f) {
-	return bitinfo_hwrio_generic_open(&bitinfo_hwrio_raw_opens_cnt, BITINFO_HWRIO_RAW_NAME);
+	return generic_open(&bitinfo_hwrio_raw_opens_cnt, 1000 /*max_opens*/, BITINFO_HWRIO_RAW_NAME);
 }
 
 static int bitinfo_hwrio_raw_close(struct inode *i, struct file *f) {
@@ -512,9 +531,8 @@ static ssize_t bitinfo_hwrio_raw_read(struct file *filp, char __user *buffer, si
 	size_t rd_words;
 	char data_buffer[BITINFO_HWRIO_STRUCT_SIZE];
 	size_t rd_cnt;
-	const u8 field_idx = BITINFO_HWRIO_IDX[bitinfo_get_rev()];
 	align_offset = *offset & 0xFFFFFFFFFFFFFFCl;
-	field_ptr = get_n_field_ptr(field_idx) + align_offset/sizeof(u32);
+	field_ptr = bitinfo_io_addr + BITINFO_HWRIO_IDX + align_offset/sizeof(u32);
 	rd_words = 0;
 
 	while (align_offset < BITINFO_HWRIO_STRUCT_SIZE && rd_words*sizeof(u32) < length) {
@@ -536,7 +554,7 @@ static ssize_t bitinfo_hwrio_raw_read(struct file *filp, char __user *buffer, si
 }
 
 static int bitinfo_hwrio_ci_a_open(struct inode *i, struct file *f) {
-	return bitinfo_hwrio_generic_open(&bitinfo_hwrio_ci_a_opens_cnt, BITINFO_HWRIO_CI_A_NAME);
+	return generic_open(&bitinfo_hwrio_ci_a_opens_cnt, 1000 /*max_opens*/, BITINFO_HWRIO_CI_A_NAME);
 }
 
 static int bitinfo_hwrio_ci_a_close(struct inode *i, struct file *f) {
@@ -544,14 +562,12 @@ static int bitinfo_hwrio_ci_a_close(struct inode *i, struct file *f) {
 }
 
 static ssize_t bitinfo_hwrio_ci_a_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset) {
-	u32* field_ptr;
-	const u8 field_idx = BITINFO_HWRIO_IDX[bitinfo_get_rev()];
-	field_ptr = get_n_field_ptr(field_idx) + CMD_IN_BITINFO_ADDR_OFFSET;
+	u32* field_ptr = bitinfo_io_addr + BITINFO_HWRIO_IDX + CMD_IN_BITINFO_ADDR_OFFSET;
 	return copy_field_u64(readl(field_ptr) | ((u64)readl(field_ptr+1) << 32), buffer, length, offset);
 }
 
 static int bitinfo_hwrio_ci_l_open(struct inode *i, struct file *f) {
-	return bitinfo_hwrio_generic_open(&bitinfo_hwrio_ci_l_opens_cnt, BITINFO_HWRIO_CI_L_NAME);
+	return generic_open(&bitinfo_hwrio_ci_l_opens_cnt, 1000 /*max_opens*/, BITINFO_HWRIO_CI_L_NAME);
 }
 
 static int bitinfo_hwrio_ci_l_close(struct inode *i, struct file *f) {
@@ -559,14 +575,12 @@ static int bitinfo_hwrio_ci_l_close(struct inode *i, struct file *f) {
 }
 
 static ssize_t bitinfo_hwrio_ci_l_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset) {
-	u32* field_ptr;
-	const u8 field_idx = BITINFO_HWRIO_IDX[bitinfo_get_rev()];
-	field_ptr = get_n_field_ptr(field_idx) + CMD_IN_BITINFO_LEN_OFFSET;
+	u32* field_ptr = bitinfo_io_addr + BITINFO_HWRIO_IDX + CMD_IN_BITINFO_LEN_OFFSET;
 	return copy_field_int32(readl(field_ptr), buffer, length, offset);
 }
 
 static int bitinfo_hwrio_co_a_open(struct inode *i, struct file *f) {
-	return bitinfo_hwrio_generic_open(&bitinfo_hwrio_co_a_opens_cnt, BITINFO_HWRIO_CO_A_NAME);
+	return generic_open(&bitinfo_hwrio_co_a_opens_cnt, 1000 /*max_opens*/, BITINFO_HWRIO_CO_A_NAME);
 }
 
 static int bitinfo_hwrio_co_a_close(struct inode *i, struct file *f) {
@@ -574,14 +588,12 @@ static int bitinfo_hwrio_co_a_close(struct inode *i, struct file *f) {
 }
 
 static ssize_t bitinfo_hwrio_co_a_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset) {
-	u32* field_ptr;
-	const u8 field_idx = BITINFO_HWRIO_IDX[bitinfo_get_rev()];
-	field_ptr = get_n_field_ptr(field_idx) + CMD_OUT_BITINFO_ADDR_OFFSET;
+	u32* field_ptr = bitinfo_io_addr + BITINFO_HWRIO_IDX + CMD_OUT_BITINFO_ADDR_OFFSET;
 	return copy_field_u64(readl(field_ptr) | ((u64)readl(field_ptr+1) << 32), buffer, length, offset);
 }
 
 static int bitinfo_hwrio_co_l_open(struct inode *i, struct file *f) {
-	return bitinfo_hwrio_generic_open(&bitinfo_hwrio_co_l_opens_cnt, BITINFO_HWRIO_CO_L_NAME);
+	return generic_open(&bitinfo_hwrio_co_l_opens_cnt, 1000 /*max_opens*/, BITINFO_HWRIO_CO_L_NAME);
 }
 
 static int bitinfo_hwrio_co_l_close(struct inode *i, struct file *f) {
@@ -589,14 +601,12 @@ static int bitinfo_hwrio_co_l_close(struct inode *i, struct file *f) {
 }
 
 static ssize_t bitinfo_hwrio_co_l_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset) {
-	u32* field_ptr;
-	const u8 field_idx = BITINFO_HWRIO_IDX[bitinfo_get_rev()];
-	field_ptr = get_n_field_ptr(field_idx) + CMD_OUT_BITINFO_LEN_OFFSET;
+	u32* field_ptr = bitinfo_io_addr + BITINFO_HWRIO_IDX + CMD_OUT_BITINFO_LEN_OFFSET;
 	return copy_field_int32(readl(field_ptr), buffer, length, offset);
 }
 
 static int bitinfo_hwrio_si_a_open(struct inode *i, struct file *f) {
-	return bitinfo_hwrio_generic_open(&bitinfo_hwrio_si_a_opens_cnt, BITINFO_HWRIO_SI_A_NAME);
+	return generic_open(&bitinfo_hwrio_si_a_opens_cnt, 1000 /*max_opens*/, BITINFO_HWRIO_SI_A_NAME);
 }
 
 static int bitinfo_hwrio_si_a_close(struct inode *i, struct file *f) {
@@ -604,14 +614,12 @@ static int bitinfo_hwrio_si_a_close(struct inode *i, struct file *f) {
 }
 
 static ssize_t bitinfo_hwrio_si_a_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset) {
-	u32* field_ptr;
-	const u8 field_idx = BITINFO_HWRIO_IDX[bitinfo_get_rev()];
-	field_ptr = get_n_field_ptr(field_idx) + SPWN_IN_BITINFO_ADDR_OFFSET;
+	u32* field_ptr = bitinfo_io_addr + BITINFO_HWRIO_IDX + SPWN_IN_BITINFO_ADDR_OFFSET;
 	return copy_field_u64(readl(field_ptr) | ((u64)readl(field_ptr+1) << 32), buffer, length, offset);
 }
 
 static int bitinfo_hwrio_si_l_open(struct inode *i, struct file *f) {
-	return bitinfo_hwrio_generic_open(&bitinfo_hwrio_si_l_opens_cnt, BITINFO_HWRIO_SI_L_NAME);
+	return generic_open(&bitinfo_hwrio_si_l_opens_cnt, 1000 /*max_opens*/, BITINFO_HWRIO_SI_L_NAME);
 }
 
 static int bitinfo_hwrio_si_l_close(struct inode *i, struct file *f) {
@@ -619,14 +627,12 @@ static int bitinfo_hwrio_si_l_close(struct inode *i, struct file *f) {
 }
 
 static ssize_t bitinfo_hwrio_si_l_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset) {
-	u32* field_ptr;
-	const u8 field_idx = BITINFO_HWRIO_IDX[bitinfo_get_rev()];
-	field_ptr = get_n_field_ptr(field_idx) + SPWN_IN_BITINFO_LEN_OFFSET;
+	u32* field_ptr = bitinfo_io_addr + BITINFO_HWRIO_IDX + SPWN_IN_BITINFO_LEN_OFFSET;
 	return copy_field_int32(readl(field_ptr), buffer, length, offset);
 }
 
 static int bitinfo_hwrio_so_a_open(struct inode *i, struct file *f) {
-	return bitinfo_hwrio_generic_open(&bitinfo_hwrio_so_a_opens_cnt, BITINFO_HWRIO_SO_A_NAME);
+	return generic_open(&bitinfo_hwrio_so_a_opens_cnt, 1000 /*max_opens*/, BITINFO_HWRIO_SO_A_NAME);
 }
 
 static int bitinfo_hwrio_so_a_close(struct inode *i, struct file *f) {
@@ -634,14 +640,12 @@ static int bitinfo_hwrio_so_a_close(struct inode *i, struct file *f) {
 }
 
 static ssize_t bitinfo_hwrio_so_a_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset) {
-	u32* field_ptr;
-	const u8 field_idx = BITINFO_HWRIO_IDX[bitinfo_get_rev()];
-	field_ptr = get_n_field_ptr(field_idx) + SPWN_OUT_BITINFO_ADDR_OFFSET;
+	u32* field_ptr = bitinfo_io_addr + BITINFO_HWRIO_IDX + SPWN_OUT_BITINFO_ADDR_OFFSET;
 	return copy_field_u64(readl(field_ptr) | ((u64)readl(field_ptr+1) << 32), buffer, length, offset);
 }
 
 static int bitinfo_hwrio_so_l_open(struct inode *i, struct file *f) {
-	return bitinfo_hwrio_generic_open(&bitinfo_hwrio_so_l_opens_cnt, BITINFO_HWRIO_SO_L_NAME);
+	return generic_open(&bitinfo_hwrio_so_l_opens_cnt, 1000 /*max_opens*/, BITINFO_HWRIO_SO_L_NAME);
 }
 
 static int bitinfo_hwrio_so_l_close(struct inode *i, struct file *f) {
@@ -649,14 +653,12 @@ static int bitinfo_hwrio_so_l_close(struct inode *i, struct file *f) {
 }
 
 static ssize_t bitinfo_hwrio_so_l_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset) {
-	u32* field_ptr;
-	const u8 field_idx = BITINFO_HWRIO_IDX[bitinfo_get_rev()];
-	field_ptr = get_n_field_ptr(field_idx) + SPWN_OUT_BITINFO_LEN_OFFSET;
+	u32* field_ptr = bitinfo_io_addr + BITINFO_HWRIO_IDX + SPWN_OUT_BITINFO_LEN_OFFSET;
 	return copy_field_int32(readl(field_ptr), buffer, length, offset);
 }
 
 static int bitinfo_hwrio_rst_a_open(struct inode *i, struct file *f) {
-	return bitinfo_hwrio_generic_open(&bitinfo_hwrio_rst_a_opens_cnt, BITINFO_HWRIO_RST_A_NAME);
+	return generic_open(&bitinfo_hwrio_rst_a_opens_cnt, 1000 /*max_opens*/, BITINFO_HWRIO_RST_A_NAME);
 }
 
 static int bitinfo_hwrio_rst_a_close(struct inode *i, struct file *f) {
@@ -664,14 +666,12 @@ static int bitinfo_hwrio_rst_a_close(struct inode *i, struct file *f) {
 }
 
 static ssize_t bitinfo_hwrio_rst_a_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset) {
-	u32* field_ptr;
-	const u8 field_idx = BITINFO_HWRIO_IDX[bitinfo_get_rev()];
-	field_ptr = get_n_field_ptr(field_idx) + RST_BITINFO_ADDR_OFFSET;
+	u32* field_ptr = bitinfo_io_addr + BITINFO_HWRIO_IDX + RST_BITINFO_ADDR_OFFSET;
 	return copy_field_u64(readl(field_ptr) | ((u64)readl(field_ptr+1) << 32), buffer, length, offset);
 }
 
 static int bitinfo_hwrio_cnt_a_open(struct inode *i, struct file *f) {
-	return bitinfo_hwrio_generic_open(&bitinfo_hwrio_cnt_a_opens_cnt, BITINFO_HWRIO_CNT_A_NAME);
+	return generic_open(&bitinfo_hwrio_cnt_a_opens_cnt, 1000 /*max_opens*/, BITINFO_HWRIO_CNT_A_NAME);
 }
 
 static int bitinfo_hwrio_cnt_a_close(struct inode *i, struct file *f) {
@@ -679,9 +679,7 @@ static int bitinfo_hwrio_cnt_a_close(struct inode *i, struct file *f) {
 }
 
 static ssize_t bitinfo_hwrio_cnt_a_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset) {
-	u32* field_ptr;
-	const u8 field_idx = BITINFO_HWRIO_IDX[bitinfo_get_rev()];
-	field_ptr = get_n_field_ptr(field_idx) + HWCOUNTER_BITINFO_ADDR_OFFSET;
+	u32* field_ptr = bitinfo_io_addr + BITINFO_HWRIO_IDX + HWCOUNTER_BITINFO_ADDR_OFFSET;
 	return copy_field_u64(readl(field_ptr) | ((u64)readl(field_ptr+1) << 32), buffer, length, offset);
 }
 
@@ -694,18 +692,12 @@ static int bitinfo_f_raw_close(struct inode *i, struct file *f) {
 }
 
 static ssize_t bitinfo_f_raw_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset) {
-	u32 * data_ptr;
 	size_t data_cnt, write_cnt;
 	//NOTE: "0x" + 16 bits of bitmask + 1 endl + 1 string terminator
 	char data_buffer[20];
-	const u8 field_idx = BITINFO_F_RAW_IDX[bitinfo_get_rev()];
 
-	if (field_idx == 0) return 0;
-	data_ptr = get_n_field_ptr(field_idx);
-	if (!data_ptr) return 0;
-
-	data_cnt = sprintf(data_buffer, "0x%016x\n", readl(data_ptr)) + 1 /*string terminator*/;
-	if (*offset > data_cnt) return 0;
+	data_cnt = sprintf(data_buffer, "0x%016x\n", readl(bitinfo_io_addr + BITINFO_F_RAW_IDX)) + 1 /*string terminator*/;
+	if (*offset >= data_cnt) return 0;
 
 	//Copy the string to user buffer
 	write_cnt =  min(length, (size_t)(data_cnt - *offset));
@@ -727,18 +719,6 @@ static ssize_t bitinfo_f_ins_read(struct file *filp, char __user *buffer, size_t
 	return bitinfo_f_n_read(0 /*bit_idx for hwcounter feature*/, 1, buffer, length, offset);
 }
 
-static int bitinfo_f_dma_open(struct inode *i, struct file *f) {
-	return generic_open(&bitinfo_f_dma_opens_cnt, 1000 /*max_opens*/, BITINFO_F_DMA_NAME);
-}
-
-static int bitinfo_f_dma_close(struct inode *i, struct file *f) {
-	return generic_close(&bitinfo_f_dma_opens_cnt, BITINFO_F_DMA_NAME);
-}
-
-static ssize_t bitinfo_f_dma_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset) {
-	return bitinfo_f_n_read(1 /*bit_idx for dma feature*/, 1, buffer, length, offset);
-}
-
 static int bitinfo_f_inopt_open(struct inode *i, struct file *f) {
 	return generic_open(&bitinfo_f_inopt_opens_cnt, 1000 /*max_opens*/, BITINFO_F_INOPT_NAME);
 }
@@ -749,30 +729,6 @@ static int bitinfo_f_inopt_close(struct inode *i, struct file *f) {
 
 static ssize_t bitinfo_f_inopt_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset) {
 	return bitinfo_f_n_read(2 /*bit_idx for intercon_opt feature*/, 1, buffer, length, offset);
-}
-
-static int bitinfo_f_inlev_open(struct inode *i, struct file *f) {
-	return generic_open(&bitinfo_f_inlev_opens_cnt, 1000 /*max_opens*/, BITINFO_F_INLEV_NAME);
-}
-
-static int bitinfo_f_inlev_close(struct inode *i, struct file *f) {
-	return generic_close(&bitinfo_f_inlev_opens_cnt, BITINFO_F_INLEV_NAME);
-}
-
-static ssize_t bitinfo_f_inlev_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset) {
-	return bitinfo_f_n_read(3 /*bit_idx for intercon_level feature*/, 2, buffer, length, offset);
-}
-
-static int bitinfo_f_hwr_open(struct inode *i, struct file *f) {
-	return generic_open(&bitinfo_f_hwr_opens_cnt, 1000 /*max_opens*/, BITINFO_F_HWR_NAME);
-}
-
-static int bitinfo_f_hwr_close(struct inode *i, struct file *f) {
-	return generic_close(&bitinfo_f_hwr_opens_cnt, BITINFO_F_HWR_NAME);
-}
-
-static ssize_t bitinfo_f_hwr_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset) {
-	return bitinfo_f_n_read(6 /*bit_idx for hwruntime feature*/, 1, buffer, length, offset);
 }
 
 static int bitinfo_f_ehwr_open(struct inode *i, struct file *f) {
@@ -886,17 +842,8 @@ static ssize_t bitinfo_wrapper_read(struct file *filp, char __user *buffer, size
 	size_t data_cnt, write_cnt;
 	//NOTE: u32 can be represented with 10 chars + 1 endl + 1 string terminator
 	char data_buffer[12];
-	u8 field_idx;
-	u32 * field_ptr;
 
-	field_idx = BITINFO_WRAPPER_IDX[bitinfo_get_rev()];
-	field_ptr = get_n_field_ptr(field_idx);
-	if (field_idx == 0 || !field_ptr) {
-		//NOTE: The wrapper version information is not available in the currently loaded bitstream
-		data_cnt = sprintf(data_buffer, "?\n") + 1 /*string terminator*/;
-	} else {
-		data_cnt = sprintf(data_buffer, "%u\n", *field_ptr) + 1 /*string terminator*/;
-	}
+	data_cnt = sprintf(data_buffer, "%u\n", readl(bitinfo_io_addr + BITINFO_WRAPPER_IDX)) + 1 /*string terminator*/;
 
 	//Copy the string to user buffer
 	if (*offset >= data_cnt) return 0;
@@ -949,29 +896,11 @@ static struct file_operations bitinfo_f_ins_fops = {
 	.release = bitinfo_f_ins_close,
 	.read = bitinfo_f_ins_read,
 };
-static struct file_operations bitinfo_f_dma_fops = {
-	.owner = THIS_MODULE,
-	.open = bitinfo_f_dma_open,
-	.release = bitinfo_f_dma_close,
-	.read = bitinfo_f_dma_read,
-};
 static struct file_operations bitinfo_f_inopt_fops = {
 	.owner = THIS_MODULE,
 	.open = bitinfo_f_inopt_open,
 	.release = bitinfo_f_inopt_close,
 	.read = bitinfo_f_inopt_read,
-};
-static struct file_operations bitinfo_f_inlev_fops = {
-	.owner = THIS_MODULE,
-	.open = bitinfo_f_inlev_open,
-	.release = bitinfo_f_inlev_close,
-	.read = bitinfo_f_inlev_read,
-};
-static struct file_operations bitinfo_f_hwr_fops = {
-	.owner = THIS_MODULE,
-	.open = bitinfo_f_hwr_open,
-	.release = bitinfo_f_hwr_close,
-	.read = bitinfo_f_hwr_read,
 };
 static struct file_operations bitinfo_f_ehwr_fops = {
 	.owner = THIS_MODULE,
@@ -1084,7 +1013,6 @@ static struct file_operations bitinfo_hwrio_cnt_a_fops = {
 };
 
 static int bitinfo_map_io(struct device_node *bitinfo_node) {
-
 	int status;
 	struct device_node *dev_node;
 #if TARGET_64_BITS
@@ -1098,14 +1026,14 @@ static int bitinfo_map_io(struct device_node *bitinfo_node) {
 		status = read_memspace(dev_node, dev_mem_space);
 		of_node_put(dev_node);
 		if (status < 0) {
-			printk(KERN_WARNING "<%s> Could not read bitstream information BRAM address\n", MODULE_NAME);
+			pr_err("<%s> Could not read bitstream information BRAM address\n", MODULE_NAME);
 			goto bitinfo_phandle_of_err;
 		}
 		//register space in virtual kernel space
-		bitinfo_io_addr = ioremap((resource_size_t)dev_mem_space[0],
+		bitinfo_io_addr = (u32* __iomem) ioremap((resource_size_t)dev_mem_space[0],
 				(size_t)dev_mem_space[1]);
 	} else {
-		printk(KERN_INFO "<%s> Bitstream information BRAM not available\n", MODULE_NAME);
+		pr_err("<%s> Bitstream information BRAM not available\n", MODULE_NAME);
 		bitinfo_io_addr = NULL;
 	}
 
@@ -1119,7 +1047,7 @@ int bitinfo_probe(struct platform_device *pdev)
 {
 	//Get the addresses from the devicetree
 	if (bitinfo_map_io(pdev->dev.of_node) < 0) {
-		printk("<%s> Error mapping bitstream info BRAM IO\n", MODULE_NAME);
+		pr_err("<%s> Error mapping bitstream info BRAM IO\n", MODULE_NAME);
 		goto bitinfo_map_io_err;
 	}
 
@@ -1131,7 +1059,7 @@ int bitinfo_probe(struct platform_device *pdev)
 
 	//Create the device class
 	if (alloc_chrdev_region(&bitinfo_devt, 0, BITINFO_NUM_DEVICES, BITINFO_MODULE_NAME) < 0) {
-		printk(KERN_ERR "<%s> Could not allocate region for bitstream info devices\n",
+		pr_err("<%s> Could not allocate region for bitstream info devices\n",
 			MODULE_NAME);
 		goto bitinfo_alloc_chrdev;
 	}
@@ -1139,7 +1067,7 @@ int bitinfo_probe(struct platform_device *pdev)
 
 	bitinfo_cl = class_create(THIS_MODULE, BITINFO_MODULE_NAME);
 	if (bitinfo_cl == NULL) {
-		printk(KERN_ERR "<%s> Could not create bitstream info device class\n",
+		pr_err("<%s> Could not create bitstream info device class\n",
 			MODULE_NAME);
 		goto bitinfo_class_err;
 	}
@@ -1148,30 +1076,29 @@ int bitinfo_probe(struct platform_device *pdev)
 	bitinfo_rev_dev = device_create(bitinfo_cl, NULL, bitinfo_devt, NULL,
 			DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_REV_NAME);
 	if (IS_ERR(bitinfo_rev_dev)) {
-		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
+		pr_err("<%s> Could not create bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_REV_NAME);
 		goto bitinfo_rev_dev_err;
 	}
 	cdev_init(&bitinfo_rev_cdev, &bitinfo_rev_fops);
 	if (cdev_add(&bitinfo_rev_cdev, bitinfo_devt, 1)<0) {
-		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
+		pr_err("<%s> Could not add bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_REV_NAME);
 		goto bitinfo_rev_cdev_err;
 	}
 	bitinfo_rev_opens_cnt = 0;
 
 	//Create device for the num_accs information
-	//NOTE: This device is only available in versions >= 2. Creating it anyway, it returns "?" if not supported
 	bitinfo_numaccs_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_NUMACCS_MINOR), NULL,
 			DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_NUMACCS_NAME);
 	if (IS_ERR(bitinfo_numaccs_dev)) {
-		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
+		pr_err("<%s> Could not create bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_NUMACCS_NAME);
 		goto bitinfo_numaccs_dev_err;
 	}
 	cdev_init(&bitinfo_numaccs_cdev, &bitinfo_numaccs_fops);
 	if (cdev_add(&bitinfo_numaccs_cdev, MKDEV(bitinfo_major, BITINFO_NUMACCS_MINOR), 1)<0) {
-		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
+		pr_err("<%s> Could not add bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_NUMACCS_NAME);
 		goto bitinfo_numaccs_cdev_err;
 	}
@@ -1181,13 +1108,13 @@ int bitinfo_probe(struct platform_device *pdev)
 	bitinfo_xtasks_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_XTASKS_MINOR), NULL,
 			DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_XTASKS_NAME);
 	if (IS_ERR(bitinfo_xtasks_dev)) {
-		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
+		pr_err("<%s> Could not create bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_XTASKS_NAME);
 		goto bitinfo_xtasks_dev_err;
 	}
 	cdev_init(&bitinfo_xtasks_cdev, &bitinfo_xtasks_fops);
 	if (cdev_add(&bitinfo_xtasks_cdev, MKDEV(bitinfo_major, BITINFO_XTASKS_MINOR), 1) < 0) {
-		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
+		pr_err("<%s> Could not add bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_XTASKS_NAME);
 		goto bitinfo_xtasks_cdev_err;
 	}
@@ -1197,13 +1124,13 @@ int bitinfo_probe(struct platform_device *pdev)
 	bitinfo_call_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_CALL_MINOR), NULL,
 			DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_CALL_NAME);
 	if (IS_ERR(bitinfo_call_dev)) {
-		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
+		pr_err("<%s> Could not create bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_CALL_NAME);
 		goto bitinfo_call_dev_err;
 	}
 	cdev_init(&bitinfo_call_cdev, &bitinfo_call_fops);
 	if (cdev_add(&bitinfo_call_cdev, MKDEV(bitinfo_major, BITINFO_CALL_MINOR), 1) < 0) {
-		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
+		pr_err("<%s> Could not add bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_CALL_NAME);
 		goto bitinfo_call_cdev_err;
 	}
@@ -1213,13 +1140,13 @@ int bitinfo_probe(struct platform_device *pdev)
 	bitinfo_ait_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_AV_MINOR), NULL,
 			DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_AV_NAME);
 	if (IS_ERR(bitinfo_ait_dev)) {
-		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
+		pr_err("<%s> Could not create bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_AV_NAME);
 		goto bitinfo_ait_dev_err;
 	}
 	cdev_init(&bitinfo_ait_cdev, &bitinfo_ait_fops);
 	if (cdev_add(&bitinfo_ait_cdev, MKDEV(bitinfo_major, BITINFO_AV_MINOR), 1) < 0) {
-		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
+		pr_err("<%s> Could not add bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_AV_NAME);
 		goto bitinfo_ait_cdev_err;
 	}
@@ -1229,13 +1156,13 @@ int bitinfo_probe(struct platform_device *pdev)
 	bitinfo_f_raw_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_F_RAW_MINOR), NULL,
 			DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_F_RAW_NAME);
 	if (IS_ERR(bitinfo_f_raw_dev)) {
-		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
+		pr_err("<%s> Could not create bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_F_RAW_NAME);
 		goto bitinfo_f_raw_dev_err;
 	}
 	cdev_init(&bitinfo_f_raw_cdev, &bitinfo_f_raw_fops);
 	if (cdev_add(&bitinfo_f_raw_cdev, MKDEV(bitinfo_major, BITINFO_F_RAW_MINOR), 1) < 0) {
-		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
+		pr_err("<%s> Could not add bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_F_RAW_NAME);
 		goto bitinfo_f_raw_cdev_err;
 	}
@@ -1245,93 +1172,45 @@ int bitinfo_probe(struct platform_device *pdev)
 	bitinfo_f_ins_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_F_INS_MINOR), NULL,
 			DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_F_INS_NAME);
 	if (IS_ERR(bitinfo_f_ins_dev)) {
-		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
+		pr_err("<%s> Could not create bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_F_INS_NAME);
 		goto bitinfo_f_ins_dev_err;
 	}
 	cdev_init(&bitinfo_f_ins_cdev, &bitinfo_f_ins_fops);
 	if (cdev_add(&bitinfo_f_ins_cdev, MKDEV(bitinfo_major, BITINFO_F_INS_MINOR), 1) < 0) {
-		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
+		pr_err("<%s> Could not add bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_F_INS_NAME);
 		goto bitinfo_f_ins_cdev_err;
 	}
 	bitinfo_f_ins_opens_cnt = 0;
 
-	//Create device for the features/hwruntime information
-	bitinfo_f_hwr_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_F_HWR_MINOR), NULL,
-			DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_F_HWR_NAME);
-	if (IS_ERR(bitinfo_f_hwr_dev)) {
-		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
-			MODULE_NAME, BITINFO_F_HWR_NAME);
-		goto bitinfo_f_hwr_dev_err;
-	}
-	cdev_init(&bitinfo_f_hwr_cdev, &bitinfo_f_hwr_fops);
-	if (cdev_add(&bitinfo_f_hwr_cdev, MKDEV(bitinfo_major, BITINFO_F_HWR_MINOR), 1) < 0) {
-		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
-			MODULE_NAME, BITINFO_F_HWR_NAME);
-		goto bitinfo_f_hwr_cdev_err;
-	}
-	bitinfo_f_hwr_opens_cnt = 0;
-
 	//Create device for the features/hwruntime_ext information
 	bitinfo_f_ehwr_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_F_EHWR_MINOR), NULL,
 			DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_F_EHWR_NAME);
 	if (IS_ERR(bitinfo_f_ehwr_dev)) {
-		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
+		pr_err("<%s> Could not create bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_F_EHWR_NAME);
 		goto bitinfo_f_ehwr_dev_err;
 	}
 	cdev_init(&bitinfo_f_ehwr_cdev, &bitinfo_f_ehwr_fops);
 	if (cdev_add(&bitinfo_f_ehwr_cdev, MKDEV(bitinfo_major, BITINFO_F_EHWR_MINOR), 1) < 0) {
-		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
+		pr_err("<%s> Could not add bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_F_EHWR_NAME);
 		goto bitinfo_f_ehwr_cdev_err;
 	}
 	bitinfo_f_ehwr_opens_cnt = 0;
 
-	//Create device for the features/dma information
-	bitinfo_f_dma_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_F_DMA_MINOR), NULL,
-			DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_F_DMA_NAME);
-	if (IS_ERR(bitinfo_f_dma_dev)) {
-		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
-			MODULE_NAME, BITINFO_F_DMA_NAME);
-		goto bitinfo_f_dma_dev_err;
-	}
-	cdev_init(&bitinfo_f_dma_cdev, &bitinfo_f_dma_fops);
-	if (cdev_add(&bitinfo_f_dma_cdev, MKDEV(bitinfo_major, BITINFO_F_DMA_MINOR), 1) < 0) {
-		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
-			MODULE_NAME, BITINFO_F_DMA_NAME);
-		goto bitinfo_f_dma_cdev_err;
-	}
-	bitinfo_f_dma_opens_cnt = 0;
-
-	//Create device for the features/intercon_lev information
-	bitinfo_f_inlev_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_F_INLEV_MINOR), NULL,
-			DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_F_INLEV_NAME);
-	if (IS_ERR(bitinfo_f_inlev_dev)) {
-		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
-			MODULE_NAME, BITINFO_F_INLEV_NAME);
-		goto bitinfo_f_inlev_dev_err;
-	}
-	cdev_init(&bitinfo_f_inlev_cdev, &bitinfo_f_inlev_fops);
-	if (cdev_add(&bitinfo_f_inlev_cdev, MKDEV(bitinfo_major, BITINFO_F_INLEV_MINOR), 1) < 0) {
-		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
-			MODULE_NAME, BITINFO_F_INLEV_NAME);
-		goto bitinfo_f_inlev_cdev_err;
-	}
-	bitinfo_f_inlev_opens_cnt = 0;
-
 	//Create device for the features/intercon_opt information
 	bitinfo_f_inopt_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_F_INOPT_MINOR), NULL,
 			DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_F_INOPT_NAME);
 	if (IS_ERR(bitinfo_f_inopt_dev)) {
-		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
+		pr_err("<%s> Could not create bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_F_INOPT_NAME);
 		goto bitinfo_f_inopt_dev_err;
 	}
 	cdev_init(&bitinfo_f_inopt_cdev, &bitinfo_f_inopt_fops);
 	if (cdev_add(&bitinfo_f_inopt_cdev, MKDEV(bitinfo_major, BITINFO_F_INOPT_MINOR), 1) < 0) {
-		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
+		pr_err("<%s> Could not add bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_F_INOPT_NAME);
 		goto bitinfo_f_inopt_cdev_err;
 	}
@@ -1341,13 +1220,13 @@ int bitinfo_probe(struct platform_device *pdev)
 	bitinfo_f_som_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_F_SOM_MINOR), NULL,
 			DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_F_SOM_NAME);
 	if (IS_ERR(bitinfo_f_som_dev)) {
-		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
+		pr_err("<%s> Could not create bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_F_SOM_NAME);
 		goto bitinfo_f_som_dev_err;
 	}
 	cdev_init(&bitinfo_f_som_cdev, &bitinfo_f_som_fops);
 	if (cdev_add(&bitinfo_f_som_cdev, MKDEV(bitinfo_major, BITINFO_F_SOM_MINOR), 1) < 0) {
-		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
+		pr_err("<%s> Could not add bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_F_SOM_NAME);
 		goto bitinfo_f_som_cdev_err;
 	}
@@ -1357,13 +1236,13 @@ int bitinfo_probe(struct platform_device *pdev)
 	bitinfo_f_pom_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_F_POM_MINOR), NULL,
 			DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_F_POM_NAME);
 	if (IS_ERR(bitinfo_f_pom_dev)) {
-		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
+		pr_err("<%s> Could not create bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_F_POM_NAME);
 		goto bitinfo_f_pom_dev_err;
 	}
 	cdev_init(&bitinfo_f_pom_cdev, &bitinfo_f_pom_fops);
 	if (cdev_add(&bitinfo_f_pom_cdev, MKDEV(bitinfo_major, BITINFO_F_POM_MINOR), 1) < 0) {
-		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
+		pr_err("<%s> Could not add bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_F_POM_NAME);
 		goto bitinfo_f_pom_cdev_err;
 	}
@@ -1373,13 +1252,13 @@ int bitinfo_probe(struct platform_device *pdev)
 	bitinfo_hwr_vlnv_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_HWR_VLNV_MINOR), NULL,
 			DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_HWR_VLNV_NAME);
 	if (IS_ERR(bitinfo_hwr_vlnv_dev)) {
-		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
+		pr_err("<%s> Could not create bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_HWR_VLNV_NAME);
 		goto bitinfo_hwr_vlnv_dev_err;
 	}
 	cdev_init(&bitinfo_hwr_vlnv_cdev, &bitinfo_hwr_vlnv_fops);
 	if (cdev_add(&bitinfo_hwr_vlnv_cdev, MKDEV(bitinfo_major, BITINFO_HWR_VLNV_MINOR), 1) < 0) {
-		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
+		pr_err( "<%s> Could not add bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_HWR_VLNV_NAME);
 		goto bitinfo_hwr_vlnv_cdev_err;
 	}
@@ -1389,13 +1268,13 @@ int bitinfo_probe(struct platform_device *pdev)
 	bitinfo_base_freq_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_BASE_FREQ_MINOR), NULL,
 			DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_BASE_FREQ_NAME);
 	if (IS_ERR(bitinfo_base_freq_dev)) {
-		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
+		pr_err("<%s> Could not create bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_BASE_FREQ_NAME);
 		goto bitinfo_base_freq_dev_err;
 	}
 	cdev_init(&bitinfo_base_freq_cdev, &bitinfo_base_freq_fops);
 	if (cdev_add(&bitinfo_base_freq_cdev, MKDEV(bitinfo_major, BITINFO_BASE_FREQ_MINOR), 1) < 0) {
-		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
+		pr_err("<%s> Could not add bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_BASE_FREQ_NAME);
 		goto bitinfo_base_freq_cdev_err;
 	}
@@ -1405,222 +1284,221 @@ int bitinfo_probe(struct platform_device *pdev)
 	bitinfo_raw_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_RAW_MINOR), NULL,
 			DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_RAW_NAME);
 	if (IS_ERR(bitinfo_raw_dev)) {
-		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
+		pr_err("<%s> Could not create bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_RAW_NAME);
 		goto bitinfo_raw_dev_err;
 	}
 	cdev_init(&bitinfo_raw_cdev, &bitinfo_raw_fops);
 	if (cdev_add(&bitinfo_raw_cdev, MKDEV(bitinfo_major, BITINFO_RAW_MINOR), 1) < 0) {
-		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
+		pr_err("<%s> Could not add bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_RAW_NAME);
 		goto bitinfo_raw_cdev_err;
 	}
 	bitinfo_raw_opens_cnt = 0;
 
 	//Create device for the wrapper version information
-	//NOTE: This device is only available in versions >= 3. Creating it anyway, it returns "?" if not supported
 	bitinfo_wrapper_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_WRAPPER_MINOR), NULL,
 			DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_WRAPPER_NAME);
 	if (IS_ERR(bitinfo_wrapper_dev)) {
-		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
+		pr_err("<%s> Could not create bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_WRAPPER_NAME);
 		goto bitinfo_wrapper_dev_err;
 	}
 	cdev_init(&bitinfo_wrapper_cdev, &bitinfo_wrapper_fops);
 	if (cdev_add(&bitinfo_wrapper_cdev, MKDEV(bitinfo_major, BITINFO_WRAPPER_MINOR), 1) < 0) {
-		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
+		pr_err("<%s> Could not add bitstream info device: '%s'\n",
 			MODULE_NAME, BITINFO_WRAPPER_NAME);
 		goto bitinfo_wrapper_cdev_err;
 	}
 	bitinfo_wrapper_opens_cnt = 0;
 
- 	//Create device for the hwruntime_io/raw information
- 	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
- 	bitinfo_hwrio_raw_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_HWRIO_RAW_MINOR), NULL,
- 	DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_HWRIO_RAW_NAME);
- 	if (IS_ERR(bitinfo_hwrio_raw_dev)) {
- 		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
- 			MODULE_NAME, BITINFO_HWRIO_RAW_NAME);
- 		goto bitinfo_hwrio_raw_dev_err;
- 	}
- 	cdev_init(&bitinfo_hwrio_raw_cdev, &bitinfo_hwrio_raw_fops);
- 	if (cdev_add(&bitinfo_hwrio_raw_cdev, MKDEV(bitinfo_major, BITINFO_HWRIO_RAW_MINOR), 1) < 0) {
- 		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
- 			MODULE_NAME, BITINFO_HWRIO_RAW_NAME);
- 		goto bitinfo_hwrio_raw_cdev_err;
- 	}
- 	bitinfo_hwrio_raw_opens_cnt = 0;
+	//Create device for the hwruntime_io/raw information
+	bitinfo_hwrio_raw_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_HWRIO_RAW_MINOR), NULL,
+	DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_HWRIO_RAW_NAME);
+	if (IS_ERR(bitinfo_hwrio_raw_dev)) {
+		pr_err("<%s> Could not create bitstream info device: '%s'\n",
+			MODULE_NAME, BITINFO_HWRIO_RAW_NAME);
+		goto bitinfo_hwrio_raw_dev_err;
+	}
+	cdev_init(&bitinfo_hwrio_raw_cdev, &bitinfo_hwrio_raw_fops);
+	if (cdev_add(&bitinfo_hwrio_raw_cdev, MKDEV(bitinfo_major, BITINFO_HWRIO_RAW_MINOR), 1) < 0) {
+		pr_err("<%s> Could not add bitstream info device: '%s'\n",
+			MODULE_NAME, BITINFO_HWRIO_RAW_NAME);
+		goto bitinfo_hwrio_raw_cdev_err;
+	}
+	bitinfo_hwrio_raw_opens_cnt = 0;
 
- 	//Create device for the hwruntime_io/cmd_in_address information
- 	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
- 	bitinfo_hwrio_ci_a_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_HWRIO_CI_A_MINOR), NULL,
- 	DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_HWRIO_CI_A_NAME);
- 	if (IS_ERR(bitinfo_hwrio_ci_a_dev)) {
- 		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
- 			MODULE_NAME, BITINFO_HWRIO_CI_A_NAME);
- 		goto bitinfo_hwrio_ci_a_dev_err;
- 	}
- 	cdev_init(&bitinfo_hwrio_ci_a_cdev, &bitinfo_hwrio_ci_a_fops);
- 	if (cdev_add(&bitinfo_hwrio_ci_a_cdev, MKDEV(bitinfo_major, BITINFO_HWRIO_CI_A_MINOR), 1) < 0) {
- 		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
- 			MODULE_NAME, BITINFO_HWRIO_CI_A_NAME);
- 		goto bitinfo_hwrio_ci_a_cdev_err;
- 	}
- 	bitinfo_hwrio_ci_a_opens_cnt = 0;
+	//Create device for the hwruntime_io/cmd_in_address information
+	bitinfo_hwrio_ci_a_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_HWRIO_CI_A_MINOR), NULL,
+	DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_HWRIO_CI_A_NAME);
+	if (IS_ERR(bitinfo_hwrio_ci_a_dev)) {
+		pr_err("<%s> Could not create bitstream info device: '%s'\n",
+			MODULE_NAME, BITINFO_HWRIO_CI_A_NAME);
+		goto bitinfo_hwrio_ci_a_dev_err;
+	}
+	cdev_init(&bitinfo_hwrio_ci_a_cdev, &bitinfo_hwrio_ci_a_fops);
+	if (cdev_add(&bitinfo_hwrio_ci_a_cdev, MKDEV(bitinfo_major, BITINFO_HWRIO_CI_A_MINOR), 1) < 0) {
+		pr_err("<%s> Could not add bitstream info device: '%s'\n",
+			MODULE_NAME, BITINFO_HWRIO_CI_A_NAME);
+		goto bitinfo_hwrio_ci_a_cdev_err;
+	}
+	bitinfo_hwrio_ci_a_opens_cnt = 0;
 
- 	//Create device for the hwruntime_io/cmd_in_subq_length information
- 	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
- 	bitinfo_hwrio_ci_l_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_HWRIO_CI_L_MINOR), NULL,
- 	DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_HWRIO_CI_L_NAME);
- 	if (IS_ERR(bitinfo_hwrio_ci_l_dev)) {
- 		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
- 			MODULE_NAME, BITINFO_HWRIO_CI_L_NAME);
- 		goto bitinfo_hwrio_ci_l_dev_err;
- 	}
- 	cdev_init(&bitinfo_hwrio_ci_l_cdev, &bitinfo_hwrio_ci_l_fops);
- 	if (cdev_add(&bitinfo_hwrio_ci_l_cdev, MKDEV(bitinfo_major, BITINFO_HWRIO_CI_L_MINOR), 1) < 0) {
- 		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
- 			MODULE_NAME, BITINFO_HWRIO_CI_L_NAME);
- 		goto bitinfo_hwrio_ci_l_cdev_err;
- 	}
- 	bitinfo_hwrio_ci_l_opens_cnt = 0;
+	//Create device for the hwruntime_io/cmd_in_subq_length information
+	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
+	bitinfo_hwrio_ci_l_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_HWRIO_CI_L_MINOR), NULL,
+	DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_HWRIO_CI_L_NAME);
+	if (IS_ERR(bitinfo_hwrio_ci_l_dev)) {
+		pr_err("<%s> Could not create bitstream info device: '%s'\n",
+			MODULE_NAME, BITINFO_HWRIO_CI_L_NAME);
+		goto bitinfo_hwrio_ci_l_dev_err;
+	}
+	cdev_init(&bitinfo_hwrio_ci_l_cdev, &bitinfo_hwrio_ci_l_fops);
+	if (cdev_add(&bitinfo_hwrio_ci_l_cdev, MKDEV(bitinfo_major, BITINFO_HWRIO_CI_L_MINOR), 1) < 0) {
+		pr_err("<%s> Could not add bitstream info device: '%s'\n",
+			MODULE_NAME, BITINFO_HWRIO_CI_L_NAME);
+		goto bitinfo_hwrio_ci_l_cdev_err;
+	}
+	bitinfo_hwrio_ci_l_opens_cnt = 0;
 
- 	//Create device for the hwruntime_io/cmd_out_address information
- 	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
- 	bitinfo_hwrio_co_a_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_HWRIO_CO_A_MINOR), NULL,
- 	DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_HWRIO_CO_A_NAME);
- 	if (IS_ERR(bitinfo_hwrio_co_a_dev)) {
- 		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
- 			MODULE_NAME, BITINFO_HWRIO_CO_A_NAME);
- 		goto bitinfo_hwrio_co_a_dev_err;
- 	}
- 	cdev_init(&bitinfo_hwrio_co_a_cdev, &bitinfo_hwrio_co_a_fops);
- 	if (cdev_add(&bitinfo_hwrio_co_a_cdev, MKDEV(bitinfo_major, BITINFO_HWRIO_CO_A_MINOR), 1) < 0) {
- 		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
- 			MODULE_NAME, BITINFO_HWRIO_CO_A_NAME);
- 		goto bitinfo_hwrio_co_a_cdev_err;
- 	}
- 	bitinfo_hwrio_co_a_opens_cnt = 0;
+	//Create device for the hwruntime_io/cmd_out_address information
+	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
+	bitinfo_hwrio_co_a_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_HWRIO_CO_A_MINOR), NULL,
+	DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_HWRIO_CO_A_NAME);
+	if (IS_ERR(bitinfo_hwrio_co_a_dev)) {
+		pr_err("<%s> Could not create bitstream info device: '%s'\n",
+			MODULE_NAME, BITINFO_HWRIO_CO_A_NAME);
+		goto bitinfo_hwrio_co_a_dev_err;
+	}
+	cdev_init(&bitinfo_hwrio_co_a_cdev, &bitinfo_hwrio_co_a_fops);
+	if (cdev_add(&bitinfo_hwrio_co_a_cdev, MKDEV(bitinfo_major, BITINFO_HWRIO_CO_A_MINOR), 1) < 0) {
+		pr_err("<%s> Could not add bitstream info device: '%s'\n",
+			MODULE_NAME, BITINFO_HWRIO_CO_A_NAME);
+		goto bitinfo_hwrio_co_a_cdev_err;
+	}
+	bitinfo_hwrio_co_a_opens_cnt = 0;
 
- 	//Create device for the hwruntime_io/cmd_out_subq_length information
- 	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
- 	bitinfo_hwrio_co_l_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_HWRIO_CO_L_MINOR), NULL,
- 	DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_HWRIO_CO_L_NAME);
- 	if (IS_ERR(bitinfo_hwrio_co_l_dev)) {
- 		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
- 			MODULE_NAME, BITINFO_HWRIO_CO_L_NAME);
- 		goto bitinfo_hwrio_co_l_dev_err;
- 	}
- 	cdev_init(&bitinfo_hwrio_co_l_cdev, &bitinfo_hwrio_co_l_fops);
- 	if (cdev_add(&bitinfo_hwrio_co_l_cdev, MKDEV(bitinfo_major, BITINFO_HWRIO_CO_L_MINOR), 1) < 0) {
- 		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
- 			MODULE_NAME, BITINFO_HWRIO_CO_L_NAME);
- 		goto bitinfo_hwrio_co_l_cdev_err;
- 	}
- 	bitinfo_hwrio_co_l_opens_cnt = 0;
+	//Create device for the hwruntime_io/cmd_out_subq_length information
+	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
+	bitinfo_hwrio_co_l_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_HWRIO_CO_L_MINOR), NULL,
+	DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_HWRIO_CO_L_NAME);
+	if (IS_ERR(bitinfo_hwrio_co_l_dev)) {
+		pr_err("<%s> Could not create bitstream info device: '%s'\n",
+			MODULE_NAME, BITINFO_HWRIO_CO_L_NAME);
+		goto bitinfo_hwrio_co_l_dev_err;
+	}
+	cdev_init(&bitinfo_hwrio_co_l_cdev, &bitinfo_hwrio_co_l_fops);
+	if (cdev_add(&bitinfo_hwrio_co_l_cdev, MKDEV(bitinfo_major, BITINFO_HWRIO_CO_L_MINOR), 1) < 0) {
+		pr_err("<%s> Could not add bitstream info device: '%s'\n",
+			MODULE_NAME, BITINFO_HWRIO_CO_L_NAME);
+		goto bitinfo_hwrio_co_l_cdev_err;
+	}
+	bitinfo_hwrio_co_l_opens_cnt = 0;
 
- 	//Create device for the hwruntime_io/spawn_in_address information
- 	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
- 	bitinfo_hwrio_si_a_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_HWRIO_SI_A_MINOR), NULL,
- 	DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_HWRIO_SI_A_NAME);
- 	if (IS_ERR(bitinfo_hwrio_si_a_dev)) {
- 		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
- 			MODULE_NAME, BITINFO_HWRIO_SI_A_NAME);
- 		goto bitinfo_hwrio_si_a_dev_err;
- 	}
- 	cdev_init(&bitinfo_hwrio_si_a_cdev, &bitinfo_hwrio_si_a_fops);
- 	if (cdev_add(&bitinfo_hwrio_si_a_cdev, MKDEV(bitinfo_major, BITINFO_HWRIO_SI_A_MINOR), 1) < 0) {
- 		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
- 			MODULE_NAME, BITINFO_HWRIO_SI_A_NAME);
- 		goto bitinfo_hwrio_si_a_cdev_err;
- 	}
- 	bitinfo_hwrio_si_a_opens_cnt = 0;
+	//Create device for the hwruntime_io/spawn_in_address information
+	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
+	bitinfo_hwrio_si_a_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_HWRIO_SI_A_MINOR), NULL,
+	DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_HWRIO_SI_A_NAME);
+	if (IS_ERR(bitinfo_hwrio_si_a_dev)) {
+		pr_err("<%s> Could not create bitstream info device: '%s'\n",
+			MODULE_NAME, BITINFO_HWRIO_SI_A_NAME);
+		goto bitinfo_hwrio_si_a_dev_err;
+	}
+	cdev_init(&bitinfo_hwrio_si_a_cdev, &bitinfo_hwrio_si_a_fops);
+	if (cdev_add(&bitinfo_hwrio_si_a_cdev, MKDEV(bitinfo_major, BITINFO_HWRIO_SI_A_MINOR), 1) < 0) {
+		pr_err("<%s> Could not add bitstream info device: '%s'\n",
+			MODULE_NAME, BITINFO_HWRIO_SI_A_NAME);
+		goto bitinfo_hwrio_si_a_cdev_err;
+	}
+	bitinfo_hwrio_si_a_opens_cnt = 0;
 
- 	//Create device for the hwruntime_io/spawn_in_q_length information
- 	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
- 	bitinfo_hwrio_si_l_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_HWRIO_SI_L_MINOR), NULL,
- 	DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_HWRIO_SI_L_NAME);
- 	if (IS_ERR(bitinfo_hwrio_si_l_dev)) {
- 		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
- 			MODULE_NAME, BITINFO_HWRIO_SI_L_NAME);
- 		goto bitinfo_hwrio_si_l_dev_err;
- 	}
- 	cdev_init(&bitinfo_hwrio_si_l_cdev, &bitinfo_hwrio_si_l_fops);
- 	if (cdev_add(&bitinfo_hwrio_si_l_cdev, MKDEV(bitinfo_major, BITINFO_HWRIO_SI_L_MINOR), 1) < 0) {
- 		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
- 			MODULE_NAME, BITINFO_HWRIO_SI_L_NAME);
- 		goto bitinfo_hwrio_si_l_cdev_err;
- 	}
- 	bitinfo_hwrio_si_l_opens_cnt = 0;
+	//Create device for the hwruntime_io/spawn_in_q_length information
+	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
+	bitinfo_hwrio_si_l_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_HWRIO_SI_L_MINOR), NULL,
+	DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_HWRIO_SI_L_NAME);
+	if (IS_ERR(bitinfo_hwrio_si_l_dev)) {
+		pr_err("<%s> Could not create bitstream info device: '%s'\n",
+			MODULE_NAME, BITINFO_HWRIO_SI_L_NAME);
+		goto bitinfo_hwrio_si_l_dev_err;
+	}
+	cdev_init(&bitinfo_hwrio_si_l_cdev, &bitinfo_hwrio_si_l_fops);
+	if (cdev_add(&bitinfo_hwrio_si_l_cdev, MKDEV(bitinfo_major, BITINFO_HWRIO_SI_L_MINOR), 1) < 0) {
+		pr_err("<%s> Could not add bitstream info device: '%s'\n",
+			MODULE_NAME, BITINFO_HWRIO_SI_L_NAME);
+		goto bitinfo_hwrio_si_l_cdev_err;
+	}
+	bitinfo_hwrio_si_l_opens_cnt = 0;
 
- 	//Create device for the hwruntime_io/spawn_out_address information
- 	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
- 	bitinfo_hwrio_so_a_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_HWRIO_SO_A_MINOR), NULL,
- 	DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_HWRIO_SO_A_NAME);
- 	if (IS_ERR(bitinfo_hwrio_so_a_dev)) {
- 		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
- 			MODULE_NAME, BITINFO_HWRIO_SO_A_NAME);
- 		goto bitinfo_hwrio_so_a_dev_err;
- 	}
- 	cdev_init(&bitinfo_hwrio_so_a_cdev, &bitinfo_hwrio_so_a_fops);
- 	if (cdev_add(&bitinfo_hwrio_so_a_cdev, MKDEV(bitinfo_major, BITINFO_HWRIO_SO_A_MINOR), 1) < 0) {
- 		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
- 			MODULE_NAME, BITINFO_HWRIO_SO_A_NAME);
- 		goto bitinfo_hwrio_so_a_cdev_err;
- 	}
- 	bitinfo_hwrio_so_a_opens_cnt = 0;
+	//Create device for the hwruntime_io/spawn_out_address information
+	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
+	bitinfo_hwrio_so_a_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_HWRIO_SO_A_MINOR), NULL,
+	DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_HWRIO_SO_A_NAME);
+	if (IS_ERR(bitinfo_hwrio_so_a_dev)) {
+		pr_err("<%s> Could not create bitstream info device: '%s'\n",
+			MODULE_NAME, BITINFO_HWRIO_SO_A_NAME);
+		goto bitinfo_hwrio_so_a_dev_err;
+	}
+	cdev_init(&bitinfo_hwrio_so_a_cdev, &bitinfo_hwrio_so_a_fops);
+	if (cdev_add(&bitinfo_hwrio_so_a_cdev, MKDEV(bitinfo_major, BITINFO_HWRIO_SO_A_MINOR), 1) < 0) {
+		pr_err("<%s> Could not add bitstream info device: '%s'\n",
+			MODULE_NAME, BITINFO_HWRIO_SO_A_NAME);
+		goto bitinfo_hwrio_so_a_cdev_err;
+	}
+	bitinfo_hwrio_so_a_opens_cnt = 0;
 
- 	//Create device for the hwruntime_io/spawn_out_q_length information
- 	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
- 	bitinfo_hwrio_so_l_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_HWRIO_SO_L_MINOR), NULL,
- 	DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_HWRIO_SO_L_NAME);
- 	if (IS_ERR(bitinfo_hwrio_so_l_dev)) {
- 		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
- 			MODULE_NAME, BITINFO_HWRIO_SO_L_NAME);
- 		goto bitinfo_hwrio_so_l_dev_err;
- 	}
- 	cdev_init(&bitinfo_hwrio_so_l_cdev, &bitinfo_hwrio_so_l_fops);
- 	if (cdev_add(&bitinfo_hwrio_so_l_cdev, MKDEV(bitinfo_major, BITINFO_HWRIO_SO_L_MINOR), 1) < 0) {
- 		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
- 			MODULE_NAME, BITINFO_HWRIO_SO_L_NAME);
- 		goto bitinfo_hwrio_so_l_cdev_err;
- 	}
- 	bitinfo_hwrio_so_l_opens_cnt = 0;
+	//Create device for the hwruntime_io/spawn_out_q_length information
+	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
+	bitinfo_hwrio_so_l_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_HWRIO_SO_L_MINOR), NULL,
+	DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_HWRIO_SO_L_NAME);
+	if (IS_ERR(bitinfo_hwrio_so_l_dev)) {
+		pr_err("<%s> Could not create bitstream info device: '%s'\n",
+			MODULE_NAME, BITINFO_HWRIO_SO_L_NAME);
+		goto bitinfo_hwrio_so_l_dev_err;
+	}
+	cdev_init(&bitinfo_hwrio_so_l_cdev, &bitinfo_hwrio_so_l_fops);
+	if (cdev_add(&bitinfo_hwrio_so_l_cdev, MKDEV(bitinfo_major, BITINFO_HWRIO_SO_L_MINOR), 1) < 0) {
+		pr_err("<%s> Could not add bitstream info device: '%s'\n",
+			MODULE_NAME, BITINFO_HWRIO_SO_L_NAME);
+		goto bitinfo_hwrio_so_l_cdev_err;
+	}
+	bitinfo_hwrio_so_l_opens_cnt = 0;
 
- 	//Create device for the hwruntime_io/rst_address information
- 	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
- 	bitinfo_hwrio_rst_a_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_HWRIO_RST_A_MINOR), NULL,
- 	DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_HWRIO_RST_A_NAME);
- 	if (IS_ERR(bitinfo_hwrio_rst_a_dev)) {
- 		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
- 			MODULE_NAME, BITINFO_HWRIO_RST_A_NAME);
- 		goto bitinfo_hwrio_rst_a_dev_err;
- 	}
- 	cdev_init(&bitinfo_hwrio_rst_a_cdev, &bitinfo_hwrio_rst_a_fops);
- 	if (cdev_add(&bitinfo_hwrio_rst_a_cdev, MKDEV(bitinfo_major, BITINFO_HWRIO_RST_A_MINOR), 1) < 0) {
- 		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
- 			MODULE_NAME, BITINFO_HWRIO_RST_A_NAME);
- 		goto bitinfo_hwrio_rst_a_cdev_err;
- 	}
- 	bitinfo_hwrio_rst_a_opens_cnt = 0;
+	//Create device for the hwruntime_io/rst_address information
+	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
+	bitinfo_hwrio_rst_a_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_HWRIO_RST_A_MINOR), NULL,
+	DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_HWRIO_RST_A_NAME);
+	if (IS_ERR(bitinfo_hwrio_rst_a_dev)) {
+		pr_err("<%s> Could not create bitstream info device: '%s'\n",
+			MODULE_NAME, BITINFO_HWRIO_RST_A_NAME);
+		goto bitinfo_hwrio_rst_a_dev_err;
+	}
+	cdev_init(&bitinfo_hwrio_rst_a_cdev, &bitinfo_hwrio_rst_a_fops);
+	if (cdev_add(&bitinfo_hwrio_rst_a_cdev, MKDEV(bitinfo_major, BITINFO_HWRIO_RST_A_MINOR), 1) < 0) {
+		pr_err("<%s> Could not add bitstream info device: '%s'\n",
+			MODULE_NAME, BITINFO_HWRIO_RST_A_NAME);
+		goto bitinfo_hwrio_rst_a_cdev_err;
+	}
+	bitinfo_hwrio_rst_a_opens_cnt = 0;
 
- 	//Create device for the hwruntime_io/counter_address information
- 	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
- 	bitinfo_hwrio_cnt_a_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_HWRIO_CNT_A_MINOR), NULL,
- 	DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_HWRIO_CNT_A_NAME);
- 	if (IS_ERR(bitinfo_hwrio_cnt_a_dev)) {
- 		printk(KERN_ERR "<%s> Could not create bitstream info device: '%s'\n",
- 			MODULE_NAME, BITINFO_HWRIO_CNT_A_NAME);
- 		goto bitinfo_hwrio_cnt_a_dev_err;
- 	}
- 	cdev_init(&bitinfo_hwrio_cnt_a_cdev, &bitinfo_hwrio_cnt_a_fops);
- 	if (cdev_add(&bitinfo_hwrio_cnt_a_cdev, MKDEV(bitinfo_major, BITINFO_HWRIO_CNT_A_MINOR), 1) < 0) {
- 		printk(KERN_ERR "<%s> Could not add bitstream info device: '%s'\n",
- 			MODULE_NAME, BITINFO_HWRIO_CNT_A_NAME);
- 		goto bitinfo_hwrio_cnt_a_cdev_err;
- 	}
- 	bitinfo_hwrio_cnt_a_opens_cnt = 0;
+	//Create device for the hwruntime_io/counter_address information
+	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
+	bitinfo_hwrio_cnt_a_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_HWRIO_CNT_A_MINOR), NULL,
+	DEV_PREFIX "/" BITINFO_DEV_DIR "/" BITINFO_HWRIO_CNT_A_NAME);
+	if (IS_ERR(bitinfo_hwrio_cnt_a_dev)) {
+		pr_err("<%s> Could not create bitstream info device: '%s'\n",
+			MODULE_NAME, BITINFO_HWRIO_CNT_A_NAME);
+		goto bitinfo_hwrio_cnt_a_dev_err;
+	}
+	cdev_init(&bitinfo_hwrio_cnt_a_cdev, &bitinfo_hwrio_cnt_a_fops);
+	if (cdev_add(&bitinfo_hwrio_cnt_a_cdev, MKDEV(bitinfo_major, BITINFO_HWRIO_CNT_A_MINOR), 1) < 0) {
+		pr_err("<%s> Could not add bitstream info device: '%s'\n",
+			MODULE_NAME, BITINFO_HWRIO_CNT_A_NAME);
+		goto bitinfo_hwrio_cnt_a_cdev_err;
+	}
+	bitinfo_hwrio_cnt_a_opens_cnt = 0;
 
+	xtasks_config_lock = 0;
+	xtasks_config = NULL;
 
 	return 0;
 
@@ -1696,22 +1574,10 @@ bitinfo_f_som_dev_err:
 bitinfo_f_inopt_cdev_err:
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_F_INOPT_MINOR));
 bitinfo_f_inopt_dev_err:
-	cdev_del(&bitinfo_f_inlev_cdev);
-bitinfo_f_inlev_cdev_err:
-	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_F_INLEV_MINOR));
-bitinfo_f_inlev_dev_err:
-	cdev_del(&bitinfo_f_dma_cdev);
-bitinfo_f_dma_cdev_err:
-	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_F_DMA_MINOR));
-bitinfo_f_dma_dev_err:
 	cdev_del(&bitinfo_f_ehwr_cdev);
 bitinfo_f_ehwr_cdev_err:
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_F_EHWR_MINOR));
 bitinfo_f_ehwr_dev_err:
-	cdev_del(&bitinfo_f_hwr_cdev);
-bitinfo_f_hwr_cdev_err:
-	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_F_HWR_MINOR));
-bitinfo_f_hwr_dev_err:
 	cdev_del(&bitinfo_f_ins_cdev);
 bitinfo_f_ins_cdev_err:
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_F_INS_MINOR));
@@ -1755,203 +1621,182 @@ int bitinfo_remove(struct platform_device *pdev)
 	if (bitinfo_cl == NULL) return 0;
 
 	if (bitinfo_rev_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_REV_NAME);
 	}
 	cdev_del(&bitinfo_rev_cdev);
 	device_destroy(bitinfo_cl, bitinfo_devt);
 
 	if (bitinfo_numaccs_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_NUMACCS_NAME);
 	}
 	cdev_del(&bitinfo_numaccs_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_NUMACCS_MINOR));
 
 	if (bitinfo_xtasks_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_XTASKS_NAME);
 	}
 	cdev_del(&bitinfo_xtasks_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_XTASKS_MINOR));
 
 	if (bitinfo_call_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_CALL_NAME);
 	}
 	cdev_del(&bitinfo_call_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_CALL_MINOR));
 
 	if (bitinfo_ait_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_AV_NAME);
 	}
 	cdev_del(&bitinfo_ait_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_AV_MINOR));
 
 	if (bitinfo_f_raw_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_F_RAW_NAME);
 	}
 	cdev_del(&bitinfo_f_raw_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_F_RAW_MINOR));
 
 	if (bitinfo_f_ins_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_F_INS_NAME);
 	}
 	cdev_del(&bitinfo_f_ins_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_F_INS_MINOR));
 
-	if (bitinfo_f_hwr_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
-			MODULE_NAME, BITINFO_F_HWR_NAME);
-	}
-	cdev_del(&bitinfo_f_hwr_cdev);
-	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_F_HWR_MINOR));
-
 	if (bitinfo_f_ehwr_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_F_EHWR_NAME);
 	}
 	cdev_del(&bitinfo_f_ehwr_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_F_EHWR_MINOR));
 
-	if (bitinfo_f_dma_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
-			MODULE_NAME, BITINFO_F_DMA_NAME);
-	}
-	cdev_del(&bitinfo_f_dma_cdev);
-	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_F_DMA_MINOR));
-
-	if (bitinfo_f_inlev_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
-			MODULE_NAME, BITINFO_F_INLEV_NAME);
-	}
-	cdev_del(&bitinfo_f_inlev_cdev);
-	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_F_INLEV_MINOR));
-
 	if (bitinfo_f_inopt_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_F_INOPT_NAME);
 	}
 	cdev_del(&bitinfo_f_inopt_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_F_INOPT_MINOR));
 
 	if (bitinfo_f_som_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_F_SOM_NAME);
 	}
 	cdev_del(&bitinfo_f_som_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_F_SOM_MINOR));
 
 	if (bitinfo_f_pom_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_F_POM_NAME);
 	}
 	cdev_del(&bitinfo_f_pom_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_F_POM_MINOR));
 
 	if (bitinfo_hwr_vlnv_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_HWR_VLNV_NAME);
 	}
 	cdev_del(&bitinfo_hwr_vlnv_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_HWR_VLNV_MINOR));
 
 	if (bitinfo_base_freq_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_BASE_FREQ_NAME);
 	}
 	cdev_del(&bitinfo_base_freq_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_BASE_FREQ_MINOR));
 
 	if (bitinfo_raw_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_RAW_NAME);
 	}
 	cdev_del(&bitinfo_raw_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_RAW_MINOR));
 
 	if (bitinfo_wrapper_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_WRAPPER_NAME);
 	}
 	cdev_del(&bitinfo_wrapper_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_WRAPPER_MINOR));
 
 	if (bitinfo_hwrio_raw_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_HWRIO_RAW_NAME);
 	}
 	cdev_del(&bitinfo_hwrio_raw_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_HWRIO_RAW_MINOR));
 
 	if (bitinfo_hwrio_ci_a_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_HWRIO_CI_A_NAME);
 	}
 	cdev_del(&bitinfo_hwrio_ci_a_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_HWRIO_CI_A_MINOR));
 
 	if (bitinfo_hwrio_ci_l_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_HWRIO_CI_L_NAME);
 	}
 	cdev_del(&bitinfo_hwrio_ci_l_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_HWRIO_CI_L_MINOR));
 
 	if (bitinfo_hwrio_co_a_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_HWRIO_CO_A_NAME);
 	}
 	cdev_del(&bitinfo_hwrio_co_a_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_HWRIO_CO_A_MINOR));
 
 	if (bitinfo_hwrio_co_l_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_HWRIO_CO_L_NAME);
 	}
 	cdev_del(&bitinfo_hwrio_co_l_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_HWRIO_CO_L_MINOR));
 
 	if (bitinfo_hwrio_si_a_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_HWRIO_SI_A_NAME);
 	}
 	cdev_del(&bitinfo_hwrio_si_a_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_HWRIO_SI_A_MINOR));
 
 	if (bitinfo_hwrio_si_l_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_HWRIO_SI_L_NAME);
 	}
 	cdev_del(&bitinfo_hwrio_si_l_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_HWRIO_SI_L_MINOR));
 
 	if (bitinfo_hwrio_so_a_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_HWRIO_SO_A_NAME);
 	}
 	cdev_del(&bitinfo_hwrio_so_a_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_HWRIO_SO_A_MINOR));
 
 	if (bitinfo_hwrio_so_l_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_HWRIO_SO_L_NAME);
 	}
 	cdev_del(&bitinfo_hwrio_so_l_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_HWRIO_SO_L_MINOR));
 
 	if (bitinfo_hwrio_rst_a_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_HWRIO_RST_A_NAME);
 	}
 	cdev_del(&bitinfo_hwrio_rst_a_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_HWRIO_RST_A_MINOR));
 
 	if (bitinfo_hwrio_cnt_a_opens_cnt) {
-		printk(KERN_INFO "<%s> exit: Device '%s' opens counter is not zero\n",
+		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_HWRIO_CNT_A_NAME);
 	}
 	cdev_del(&bitinfo_hwrio_cnt_a_cdev);
