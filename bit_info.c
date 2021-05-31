@@ -675,7 +675,7 @@ static int bitinfo_hwrio_cnt_a_open(struct inode *i, struct file *f) {
 }
 
 static int bitinfo_hwrio_cnt_a_close(struct inode *i, struct file *f) {
-	return generic_close(&bitinfo_hwrio_ci_a_opens_cnt, BITINFO_HWRIO_CNT_A_NAME);
+	return generic_close(&bitinfo_hwrio_cnt_a_opens_cnt, BITINFO_HWRIO_CNT_A_NAME);
 }
 
 static ssize_t bitinfo_hwrio_cnt_a_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset) {
