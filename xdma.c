@@ -236,7 +236,13 @@ static int prepare_sg_list(struct sg_table **sg_tab,
 			}
 			//Set size for last page
 			if (pg_left == 0 && i == ret-1) {
-				pg_len -= PAGE_SIZE - ((len + offset) % PAGE_SIZE);
+				if ((len + offset) % PAGE_SIZE == 0) {
+					//Handle case where the end of the transfer is aligned to the end of the page
+					pg_len = PAGE_SIZE - ((len + offset) % PAGE_SIZE);
+				} else {
+					pg_len -= PAGE_SIZE - ((len + offset) % PAGE_SIZE);
+				}
+				//printk("  setting last page %x %x %x %x\n", fp_offset, offset, pg_len, len);
 			}
 			sg_set_page(sg, page_list[i], pg_len, fp_offset);
 			//sg->dma_length = pg_len;	//Also set dma length
