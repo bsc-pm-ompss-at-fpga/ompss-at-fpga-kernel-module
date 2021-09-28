@@ -31,7 +31,7 @@
 #include "ompss_fpga_common.h"
 
 #define BITINFO_MODULE_NAME      "ompss_fpga_bitinfo"
-#define BITINFO_DEV_DIR          "bit_info"
+#define BITINFO_DEV_DIR          "bitinfo"
 #define BITINFO_PHANDLE_NAME     "bitstreaminfo"
 
 #define BITINFO_RAW_NAME         "raw"

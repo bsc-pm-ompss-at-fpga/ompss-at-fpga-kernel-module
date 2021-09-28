@@ -1,5 +1,5 @@
 obj-m += ompss_fpga.o
-ompss_fpga-objs += main.o hwcounter.o xdma.o bit_info.o hwruntime.o xdma_mem.o
+ompss_fpga-objs += main.o hwcounter.o xdma.o bitinfo.o hwruntime.o xdma_mem.o
 
 ifeq ($(KDIR),)
 	KDIR := /lib/modules/$(shell uname -r)/build
@@ -8,7 +8,7 @@ endif
 all: ompss_fpga.ko
 
 ompss_fpga.ko: ompss_fpga.h ompss_fpga_common.h main.c hwcounter.c xdma.c \
-bit_info.c hwruntime.c
+bitinfo.c hwruntime.c
 	make -C $(KDIR) M=$(PWD) modules
 
 clean:

@@ -7,7 +7,7 @@ The main devices created by the driver are:
  - `/dev/hwruntime/` contains a set of device files allowing to map the HW runtime queues into userspace memory and interact with them.
  - `/dev/xdma` provides the capabilities to allocate memory accessible by the fpga device and communicate with DMA engines.
  - `/dev/hwcounter` provides access to the HW instrumentation counter used to trace the accelerators execution.
- - `/dev/bit_info/` contains a set of device files with the information about the bitstream.
+ - `/dev/bitinfo/` contains a set of device files with the information about the bitstream.
     How it was generated, the accelerators that it contains, the features available in the design, etc.
 
 ### Build the driver
