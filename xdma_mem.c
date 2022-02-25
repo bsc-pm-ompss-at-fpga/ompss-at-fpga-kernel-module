@@ -120,8 +120,14 @@ static int xdmamem_mmap(struct file *filp, struct vm_area_struct *vma)
 	requested_size = vma->vm_end - vma->vm_start;
 
 	PRINT_DBG(XDMAMEM_MODULE_NAME "Request %lu bytes to kernel\n", requested_size);
+#if LINUX_KERNEL_VERSION_4XX || LINUX_KERNEL_VERSION_3XX
 	buffer_addr = dma_zalloc_coherent(dev, requested_size, &dma_handle,
 			GFP_KERNEL);
+#else
+	buffer_addr = dma_alloc_coherent(dev, requested_size, &dma_handle,
+			GFP_KERNEL | __GFP_ZERO)
+#endif
+
 	PRINT_DBG("    dma@: %llx kernel@: %p\n", (u64)dma_handle, buffer_addr);
 	if (!buffer_addr) {
 		return -ENOMEM;
@@ -195,6 +201,12 @@ static size_t xdmamem_release_kernel_buffer(struct xdmamem_kern_buf *buff_desc)
 	return size;
 }
 
+#if LINUX_KERNEL_VERSION_5XX
+#define XDMAMEM_ACCESS_OK(type, var, size) access_ok(var, size)
+#else
+#define XDMAMEM_ACCESS_OK(type, var, size) access_ok(type, var, size)
+#endif
+
 static long xdmamem_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	long ret = 0;
@@ -204,7 +216,7 @@ static long xdmamem_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 
 	switch (cmd) {
 	case XDMAMEM_GET_LAST_KBUF:
-		if (!access_ok(void*, (void*)arg, sizeof(void*))) {
+		if (!XDMAMEM_ACCESS_OK(void*, (void*)arg, sizeof(void*))) {
 			pr_debug("<%s> Cannot access user variable @0x%lx",
 					XDMAMEM_MODULE_NAME, arg);
 			return -EFAULT;
@@ -216,7 +228,7 @@ static long xdmamem_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 		break;
 	case XDMAMEM_RELEASE_KBUF:
 		PRINT_DBG(KERN_DEBUG "<%s> ioctl: XDMAMEM_RELEASE_KBUFF\n", XDMAMEM_MODULE_NAME);
-		if (!access_ok(void*, (void*)arg, sizeof(void*))) {
+		if (!XDMAMEM_ACCESS_OK(void*, (void*)arg, sizeof(void*))) {
 			pr_debug("<%s> Cannot access user variable @0x%lx",
 					XDMAMEM_MODULE_NAME, arg);
 			return -EFAULT;
@@ -227,7 +239,7 @@ static long xdmamem_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 
 	case XDMAMEM_GET_DMA_ADDRESS:
 		PRINT_DBG(KERN_DEBUG "<%s> ioctl: XDMAMEM_GET_DMA_ADDRESS\n", XDMAMEM_MODULE_NAME);
-		if (!access_ok(void*, (void*)arg, sizeof(void*))) {
+		if (!XDMAMEM_ACCESS_OK(void*, (void*)arg, sizeof(void*))) {
 			pr_debug("<%s> Cannot access user variable @0x%lx",
 					XDMAMEM_MODULE_NAME, arg);
 			return -EFAULT;
