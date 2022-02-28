@@ -27,6 +27,7 @@
 #include <linux/platform_device.h>
 #include <linux/uaccess.h>
 #include <linux/version.h>
+#include <linux/atomic.h>
 
 #include "ompss_fpga.h"
 
@@ -55,8 +56,8 @@ int bitinfo_remove(struct platform_device *pdev);
 int hwruntime_probe(struct platform_device *pdev);
 int hwruntime_remove(struct platform_device *pdev);
 
-int generic_open(int *opens_cnt, const int max_opens, const char *name);
-int generic_close(int *opens_cnt, const char *name);
+int generic_open(atomic_t *opens_cnt, const int max_opens, const char *name);
+int generic_close(atomic_t *opens_cnt, const char *name);
 
 int generic_mmap(struct file *filp, struct vm_area_struct *vma,
 		unsigned long io_addr, const char *name);

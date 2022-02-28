@@ -26,6 +26,7 @@
 #include <linux/mm.h>
 #include <linux/kdev_t.h>
 #include <linux/slab.h>
+#include <linux/spinlock.h>
 #include <asm/io.h>
 
 #include "ompss_fpga_common.h"
@@ -134,39 +135,39 @@ static struct device *bitinfo_raw_dev, *bitinfo_rev_dev, *bitinfo_numaccs_dev, *
 	*bitinfo_hwrio_si_a_dev, *bitinfo_hwrio_si_l_dev, *bitinfo_hwrio_so_a_dev, *bitinfo_hwrio_so_l_dev,
 	*bitinfo_hwrio_rst_a_dev, *bitinfo_hwrio_cnt_a_dev, *bitinfo_note_dev, *bitinfo_intlv_stride_dev;
 
-static int bitinfo_rev_opens_cnt;          // Opens counter of revision device
-static int bitinfo_numaccs_opens_cnt;      // Opens counter of num_accs device
-static int bitinfo_xtasks_opens_cnt;       // Opens counter of xtasks device
-static int bitinfo_f_raw_opens_cnt;        // Opens counter of features/raw device
-static int bitinfo_f_ins_opens_cnt;        // Opens counter of features/hwcounter device
-static int bitinfo_f_inopt_opens_cnt;      // Opens counter of features/intercon_opt device
-static int bitinfo_f_ehwr_opens_cnt;       // Opens counter of features/hwruntime_ext device
-static int bitinfo_f_som_opens_cnt;        // Opens counter of features/hwruntime_som device
-static int bitinfo_f_pom_opens_cnt;        // Opens counter of features/hwruntime_pom device
-static int bitinfo_call_opens_cnt;         // Opens counter of ait_call device
-static int bitinfo_ait_opens_cnt;          // Opens counter of ait_version device
-static int bitinfo_wrapper_opens_cnt;      // Opens counter of wrapper_version device
-static int bitinfo_hwr_vlnv_opens_cnt;     // Opens counter of hwruntime_vlnv device
-static int bitinfo_base_freq_opens_cnt;    // Opens counter of base_freq device
-static int bitinfo_raw_opens_cnt;          // Opens counter of raw device
-static int bitinfo_hwrio_raw_opens_cnt;    // Opens counter of hwruntime_io/raw device
-static int bitinfo_hwrio_ci_a_opens_cnt;   // Opens counter of hwruntime_io/cmd_in_address device
-static int bitinfo_hwrio_ci_l_opens_cnt;   // Opens counter of hwruntime_io/cmd_in_subq_length device
-static int bitinfo_hwrio_co_a_opens_cnt;   // Opens counter of hwruntime_io/cmd_out_address device
-static int bitinfo_hwrio_co_l_opens_cnt;   // Opens counter of hwruntime_io/cmd_out_subq_length device
-static int bitinfo_hwrio_si_a_opens_cnt;   // Opens counter of hwruntime_io/spawn_in_address device
-static int bitinfo_hwrio_si_l_opens_cnt;   // Opens counter of hwruntime_io/spawn_in_q_length device
-static int bitinfo_hwrio_so_a_opens_cnt;   // Opens counter of hwruntime_io/spawn_out_address device
-static int bitinfo_hwrio_so_l_opens_cnt;   // Opens counter of hwruntime_io/spawn_out_q_length device
-static int bitinfo_hwrio_rst_a_opens_cnt;  // Opens counter of hwruntime_io/rst_address device
-static int bitinfo_hwrio_cnt_a_opens_cnt;  // Opens counter of hwruntime_io/counter_address device
-static int bitinfo_note_opens_cnt;         // Opens counter of bitinfo_note device
-static int bitinfo_intlv_stride_opens_cnt; // Opens counter of interleave_stride device
+static atomic_t bitinfo_rev_opens_cnt;          // Opens counter of revision device
+static atomic_t bitinfo_numaccs_opens_cnt;      // Opens counter of num_accs device
+static atomic_t bitinfo_xtasks_opens_cnt;       // Opens counter of xtasks device
+static atomic_t bitinfo_f_raw_opens_cnt;        // Opens counter of features/raw device
+static atomic_t bitinfo_f_ins_opens_cnt;        // Opens counter of features/hwcounter device
+static atomic_t bitinfo_f_inopt_opens_cnt;      // Opens counter of features/intercon_opt device
+static atomic_t bitinfo_f_ehwr_opens_cnt;       // Opens counter of features/hwruntime_ext device
+static atomic_t bitinfo_f_som_opens_cnt;        // Opens counter of features/hwruntime_som device
+static atomic_t bitinfo_f_pom_opens_cnt;        // Opens counter of features/hwruntime_pom device
+static atomic_t bitinfo_call_opens_cnt;         // Opens counter of ait_call device
+static atomic_t bitinfo_ait_opens_cnt;          // Opens counter of ait_version device
+static atomic_t bitinfo_wrapper_opens_cnt;      // Opens counter of wrapper_version device
+static atomic_t bitinfo_hwr_vlnv_opens_cnt;     // Opens counter of hwruntime_vlnv device
+static atomic_t bitinfo_base_freq_opens_cnt;    // Opens counter of base_freq device
+static atomic_t bitinfo_raw_opens_cnt;          // Opens counter of raw device
+static atomic_t bitinfo_hwrio_raw_opens_cnt;    // Opens counter of hwruntime_io/raw device
+static atomic_t bitinfo_hwrio_ci_a_opens_cnt;   // Opens counter of hwruntime_io/cmd_in_address device
+static atomic_t bitinfo_hwrio_ci_l_opens_cnt;   // Opens counter of hwruntime_io/cmd_in_subq_length device
+static atomic_t bitinfo_hwrio_co_a_opens_cnt;   // Opens counter of hwruntime_io/cmd_out_address device
+static atomic_t bitinfo_hwrio_co_l_opens_cnt;   // Opens counter of hwruntime_io/cmd_out_subq_length device
+static atomic_t bitinfo_hwrio_si_a_opens_cnt;   // Opens counter of hwruntime_io/spawn_in_address device
+static atomic_t bitinfo_hwrio_si_l_opens_cnt;   // Opens counter of hwruntime_io/spawn_in_q_length device
+static atomic_t bitinfo_hwrio_so_a_opens_cnt;   // Opens counter of hwruntime_io/spawn_out_address device
+static atomic_t bitinfo_hwrio_so_l_opens_cnt;   // Opens counter of hwruntime_io/spawn_out_q_length device
+static atomic_t bitinfo_hwrio_rst_a_opens_cnt;  // Opens counter of hwruntime_io/rst_address device
+static atomic_t bitinfo_hwrio_cnt_a_opens_cnt;  // Opens counter of hwruntime_io/counter_address device
+static atomic_t bitinfo_note_opens_cnt;         // Opens counter of bitinfo_note device
+static atomic_t bitinfo_intlv_stride_opens_cnt; // Opens counter of interleave_stride device
 static int bitinfo_major;
 
 u32 __iomem * bitinfo_io_addr;
 char* xtasks_config;
-static int xtasks_config_lock;
+static spinlock_t xtasks_config_lock;
 static size_t xtasks_config_size;
 
 int read_hwruntime_addr_from_bitinfo(const char* phandle_name, int extended_queue, int bitinfo_addr_offset, unsigned long* dev_mem_space) {
@@ -371,9 +372,7 @@ static int bitinfo_xtasks_open(struct inode *i, struct file *f) {
 		return ret;
 	}
 
-	while (__sync_lock_test_and_set(&xtasks_config_lock, 1)) {
-		while (xtasks_config_lock);
-	}
+	spin_lock(&xtasks_config_lock);
 
 	if (xtasks_config == NULL) {
 		u32* xtasks_bin = bitinfo_io_addr + BITINFO_XTASKS_IDX;
@@ -393,8 +392,8 @@ static int bitinfo_xtasks_open(struct inode *i, struct file *f) {
 		xtasks_config_size = ntasktypes*60 + 20 + 1; // 60 characters per task type + 20 header characters + 1 string terminator
 		xtasks_config = (char*)kmalloc(xtasks_config_size, GFP_KERNEL);
 		if (xtasks_config == NULL) {
-			__sync_sub_and_fetch(&bitinfo_xtasks_opens_cnt, 1);
-			__sync_lock_release(&xtasks_config_lock);
+			atomic_dec(&bitinfo_xtasks_opens_cnt);
+			spin_unlock(&xtasks_config_lock);
 			pr_err("<%s> Could not allocate memory for xtasks_config", MODULE_NAME);
 			return -ENOMEM;
 		}
@@ -431,7 +430,7 @@ static int bitinfo_xtasks_open(struct inode *i, struct file *f) {
 		}
 	}
 
-	__sync_lock_release(&xtasks_config_lock);
+	spin_unlock(&xtasks_config_lock);
 
 	return 0;
 }
@@ -439,16 +438,14 @@ static int bitinfo_xtasks_open(struct inode *i, struct file *f) {
 static int bitinfo_xtasks_close(struct inode *i, struct file *f) {
 	int ret = generic_close(&bitinfo_xtasks_opens_cnt, BITINFO_XTASKS_NAME);
 
-	while (__sync_lock_test_and_set(&xtasks_config_lock, 1)) {
-		while (xtasks_config_lock);
-	}
+	spin_lock(&xtasks_config_lock);
 
-	if (bitinfo_xtasks_opens_cnt == 0) {
+	if (atomic_read(&bitinfo_xtasks_opens_cnt) == 0) {
 		kfree(xtasks_config);
 		xtasks_config = NULL;
 	}
 
-	__sync_lock_release(&xtasks_config_lock);
+	spin_unlock(&xtasks_config_lock);
 	return ret;
 }
 
@@ -1134,7 +1131,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_REV_NAME);
 		goto bitinfo_rev_cdev_err;
 	}
-	bitinfo_rev_opens_cnt = 0;
+	atomic_set(&bitinfo_rev_opens_cnt, 0);
 
 	//Create device for the num_accs information
 	bitinfo_numaccs_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_NUMACCS_MINOR), NULL,
@@ -1150,7 +1147,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_NUMACCS_NAME);
 		goto bitinfo_numaccs_cdev_err;
 	}
-	bitinfo_numaccs_opens_cnt = 0;
+	atomic_set(&bitinfo_numaccs_opens_cnt, 0);
 
 	//Create device for the xtasks config information
 	bitinfo_xtasks_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_XTASKS_MINOR), NULL,
@@ -1166,7 +1163,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_XTASKS_NAME);
 		goto bitinfo_xtasks_cdev_err;
 	}
-	bitinfo_xtasks_opens_cnt = 0;
+	atomic_set(&bitinfo_xtasks_opens_cnt, 0);
 
 	//Create device for the ait call information
 	bitinfo_call_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_CALL_MINOR), NULL,
@@ -1182,7 +1179,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_CALL_NAME);
 		goto bitinfo_call_cdev_err;
 	}
-	bitinfo_call_opens_cnt = 0;
+	atomic_set(&bitinfo_call_opens_cnt, 0);
 
 	//Create device for the ait version information
 	bitinfo_ait_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_AV_MINOR), NULL,
@@ -1198,7 +1195,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_AV_NAME);
 		goto bitinfo_ait_cdev_err;
 	}
-	bitinfo_ait_opens_cnt = 0;
+	atomic_set(&bitinfo_ait_opens_cnt, 0);
 
 	//Create device for the features/raw information
 	bitinfo_f_raw_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_F_RAW_MINOR), NULL,
@@ -1214,7 +1211,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_F_RAW_NAME);
 		goto bitinfo_f_raw_cdev_err;
 	}
-	bitinfo_f_raw_opens_cnt = 0;
+	atomic_set(&bitinfo_f_raw_opens_cnt, 0);
 
 	//Create device for the features/hwcounter information
 	bitinfo_f_ins_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_F_INS_MINOR), NULL,
@@ -1230,7 +1227,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_F_INS_NAME);
 		goto bitinfo_f_ins_cdev_err;
 	}
-	bitinfo_f_ins_opens_cnt = 0;
+	atomic_set(&bitinfo_f_ins_opens_cnt, 0);
 
 	//Create device for the features/hwruntime_ext information
 	bitinfo_f_ehwr_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_F_EHWR_MINOR), NULL,
@@ -1246,7 +1243,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_F_EHWR_NAME);
 		goto bitinfo_f_ehwr_cdev_err;
 	}
-	bitinfo_f_ehwr_opens_cnt = 0;
+	atomic_set(&bitinfo_f_ehwr_opens_cnt, 0);
 
 	//Create device for the features/intercon_opt information
 	bitinfo_f_inopt_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_F_INOPT_MINOR), NULL,
@@ -1262,7 +1259,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_F_INOPT_NAME);
 		goto bitinfo_f_inopt_cdev_err;
 	}
-	bitinfo_f_inopt_opens_cnt = 0;
+	atomic_set(&bitinfo_f_inopt_opens_cnt, 0);
 
 	//Create device for the features/hwruntime_som information
 	bitinfo_f_som_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_F_SOM_MINOR), NULL,
@@ -1278,7 +1275,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_F_SOM_NAME);
 		goto bitinfo_f_som_cdev_err;
 	}
-	bitinfo_f_som_opens_cnt = 0;
+	atomic_set(&bitinfo_f_som_opens_cnt, 0);
 
 	//Create device for the features/hwruntime_pom information
 	bitinfo_f_pom_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_F_POM_MINOR), NULL,
@@ -1294,7 +1291,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_F_POM_NAME);
 		goto bitinfo_f_pom_cdev_err;
 	}
-	bitinfo_f_pom_opens_cnt = 0;
+	atomic_set(&bitinfo_f_pom_opens_cnt, 0);
 
 	//Create device for the hardware runtime VLNV information
 	bitinfo_hwr_vlnv_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_HWR_VLNV_MINOR), NULL,
@@ -1310,7 +1307,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_HWR_VLNV_NAME);
 		goto bitinfo_hwr_vlnv_cdev_err;
 	}
-	bitinfo_hwr_vlnv_opens_cnt = 0;
+	atomic_set(&bitinfo_hwr_vlnv_opens_cnt, 0);
 
 	//Create device for the hardware base frequency information
 	bitinfo_base_freq_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_BASE_FREQ_MINOR), NULL,
@@ -1326,7 +1323,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_BASE_FREQ_NAME);
 		goto bitinfo_base_freq_cdev_err;
 	}
-	bitinfo_base_freq_opens_cnt = 0;
+	atomic_set(&bitinfo_base_freq_opens_cnt, 0);
 
 	//Create device for the raw information
 	bitinfo_raw_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_RAW_MINOR), NULL,
@@ -1342,7 +1339,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_RAW_NAME);
 		goto bitinfo_raw_cdev_err;
 	}
-	bitinfo_raw_opens_cnt = 0;
+	atomic_set(&bitinfo_raw_opens_cnt, 0);
 
 	//Create device for the wrapper version information
 	bitinfo_wrapper_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_WRAPPER_MINOR), NULL,
@@ -1358,7 +1355,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_WRAPPER_NAME);
 		goto bitinfo_wrapper_cdev_err;
 	}
-	bitinfo_wrapper_opens_cnt = 0;
+	atomic_set(&bitinfo_wrapper_opens_cnt, 0);
 
 	//Create device for the hwruntime_io/raw information
 	bitinfo_hwrio_raw_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_HWRIO_RAW_MINOR), NULL,
@@ -1374,7 +1371,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_HWRIO_RAW_NAME);
 		goto bitinfo_hwrio_raw_cdev_err;
 	}
-	bitinfo_hwrio_raw_opens_cnt = 0;
+	atomic_set(&bitinfo_hwrio_raw_opens_cnt, 0);
 
 	//Create device for the hwruntime_io/cmd_in_address information
 	bitinfo_hwrio_ci_a_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_HWRIO_CI_A_MINOR), NULL,
@@ -1390,7 +1387,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_HWRIO_CI_A_NAME);
 		goto bitinfo_hwrio_ci_a_cdev_err;
 	}
-	bitinfo_hwrio_ci_a_opens_cnt = 0;
+	atomic_set(&bitinfo_hwrio_ci_a_opens_cnt, 0);
 
 	//Create device for the hwruntime_io/cmd_in_subq_length information
 	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
@@ -1407,7 +1404,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_HWRIO_CI_L_NAME);
 		goto bitinfo_hwrio_ci_l_cdev_err;
 	}
-	bitinfo_hwrio_ci_l_opens_cnt = 0;
+	atomic_set(&bitinfo_hwrio_ci_l_opens_cnt, 0);
 
 	//Create device for the hwruntime_io/cmd_out_address information
 	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
@@ -1424,7 +1421,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_HWRIO_CO_A_NAME);
 		goto bitinfo_hwrio_co_a_cdev_err;
 	}
-	bitinfo_hwrio_co_a_opens_cnt = 0;
+	atomic_set(&bitinfo_hwrio_co_a_opens_cnt, 0);
 
 	//Create device for the hwruntime_io/cmd_out_subq_length information
 	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
@@ -1441,7 +1438,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_HWRIO_CO_L_NAME);
 		goto bitinfo_hwrio_co_l_cdev_err;
 	}
-	bitinfo_hwrio_co_l_opens_cnt = 0;
+	atomic_set(&bitinfo_hwrio_co_l_opens_cnt, 0);
 
 	//Create device for the hwruntime_io/spawn_in_address information
 	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
@@ -1458,7 +1455,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_HWRIO_SI_A_NAME);
 		goto bitinfo_hwrio_si_a_cdev_err;
 	}
-	bitinfo_hwrio_si_a_opens_cnt = 0;
+	atomic_set(&bitinfo_hwrio_si_a_opens_cnt, 0);
 
 	//Create device for the hwruntime_io/spawn_in_q_length information
 	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
@@ -1475,7 +1472,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_HWRIO_SI_L_NAME);
 		goto bitinfo_hwrio_si_l_cdev_err;
 	}
-	bitinfo_hwrio_si_l_opens_cnt = 0;
+	atomic_set(&bitinfo_hwrio_si_l_opens_cnt, 0);
 
 	//Create device for the hwruntime_io/spawn_out_address information
 	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
@@ -1492,7 +1489,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_HWRIO_SO_A_NAME);
 		goto bitinfo_hwrio_so_a_cdev_err;
 	}
-	bitinfo_hwrio_so_a_opens_cnt = 0;
+	atomic_set(&bitinfo_hwrio_so_a_opens_cnt, 0);
 
 	//Create device for the hwruntime_io/spawn_out_q_length information
 	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
@@ -1509,7 +1506,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_HWRIO_SO_L_NAME);
 		goto bitinfo_hwrio_so_l_cdev_err;
 	}
-	bitinfo_hwrio_so_l_opens_cnt = 0;
+	atomic_set(&bitinfo_hwrio_so_l_opens_cnt, 0);
 
 	//Create device for the hwruntime_io/rst_address information
 	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
@@ -1526,7 +1523,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_HWRIO_RST_A_NAME);
 		goto bitinfo_hwrio_rst_a_cdev_err;
 	}
-	bitinfo_hwrio_rst_a_opens_cnt = 0;
+	atomic_set(&bitinfo_hwrio_rst_a_opens_cnt, 0);
 
 	//Create device for the hwruntime_io/counter_address information
 	//NOTE: This device is only available in versions >= 7. Creating it anyway, it returns ENODEV if not supported on open
@@ -1543,7 +1540,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_HWRIO_CNT_A_NAME);
 		goto bitinfo_hwrio_cnt_a_cdev_err;
 	}
-	bitinfo_hwrio_cnt_a_opens_cnt = 0;
+	atomic_set(&bitinfo_hwrio_cnt_a_opens_cnt, 0);
 
 	//Create device for the bitinfo note information
 	bitinfo_note_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_NOTE_MINOR), NULL,
@@ -1559,7 +1556,7 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_NOTE_NAME);
 		goto bitinfo_note_cdev_err;
 	}
-	bitinfo_note_opens_cnt = 0;
+	atomic_set(&bitinfo_note_opens_cnt, 0);
 
 	//Create device for the intlv_stride information
 	bitinfo_intlv_stride_dev = device_create(bitinfo_cl, NULL, MKDEV(bitinfo_major, BITINFO_INTLV_STRIDE_MINOR), NULL,
@@ -1575,9 +1572,9 @@ int bitinfo_probe(struct platform_device *pdev)
 			MODULE_NAME, BITINFO_INTLV_STRIDE_NAME);
 		goto bitinfo_intlv_stride_cdev_err;
 	}
-	bitinfo_intlv_stride_opens_cnt = 0;
+	atomic_set(&bitinfo_intlv_stride_opens_cnt, 0);
 
-	xtasks_config_lock = 0;
+	spin_lock_init(&xtasks_config_lock);
 	xtasks_config = NULL;
 
 	return 0;
@@ -1708,196 +1705,196 @@ int bitinfo_remove(struct platform_device *pdev)
 	//The device was not created
 	if (bitinfo_cl == NULL) return 0;
 
-	if (bitinfo_rev_opens_cnt) {
+	if (atomic_read(&bitinfo_rev_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_REV_NAME);
 	}
 	cdev_del(&bitinfo_rev_cdev);
 	device_destroy(bitinfo_cl, bitinfo_devt);
 
-	if (bitinfo_numaccs_opens_cnt) {
+	if (atomic_read(&bitinfo_numaccs_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_NUMACCS_NAME);
 	}
 	cdev_del(&bitinfo_numaccs_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_NUMACCS_MINOR));
 
-	if (bitinfo_xtasks_opens_cnt) {
+	if (atomic_read(&bitinfo_xtasks_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_XTASKS_NAME);
 	}
 	cdev_del(&bitinfo_xtasks_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_XTASKS_MINOR));
 
-	if (bitinfo_call_opens_cnt) {
+	if (atomic_read(&bitinfo_call_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_CALL_NAME);
 	}
 	cdev_del(&bitinfo_call_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_CALL_MINOR));
 
-	if (bitinfo_ait_opens_cnt) {
+	if (atomic_read(&bitinfo_ait_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_AV_NAME);
 	}
 	cdev_del(&bitinfo_ait_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_AV_MINOR));
 
-	if (bitinfo_f_raw_opens_cnt) {
+	if (atomic_read(&bitinfo_f_raw_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_F_RAW_NAME);
 	}
 	cdev_del(&bitinfo_f_raw_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_F_RAW_MINOR));
 
-	if (bitinfo_f_ins_opens_cnt) {
+	if (atomic_read(&bitinfo_f_ins_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_F_INS_NAME);
 	}
 	cdev_del(&bitinfo_f_ins_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_F_INS_MINOR));
 
-	if (bitinfo_f_ehwr_opens_cnt) {
+	if (atomic_read(&bitinfo_f_ehwr_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_F_EHWR_NAME);
 	}
 	cdev_del(&bitinfo_f_ehwr_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_F_EHWR_MINOR));
 
-	if (bitinfo_f_inopt_opens_cnt) {
+	if (atomic_read(&bitinfo_f_inopt_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_F_INOPT_NAME);
 	}
 	cdev_del(&bitinfo_f_inopt_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_F_INOPT_MINOR));
 
-	if (bitinfo_f_som_opens_cnt) {
+	if (atomic_read(&bitinfo_f_som_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_F_SOM_NAME);
 	}
 	cdev_del(&bitinfo_f_som_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_F_SOM_MINOR));
 
-	if (bitinfo_f_pom_opens_cnt) {
+	if (atomic_read(&bitinfo_f_pom_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_F_POM_NAME);
 	}
 	cdev_del(&bitinfo_f_pom_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_F_POM_MINOR));
 
-	if (bitinfo_hwr_vlnv_opens_cnt) {
+	if (atomic_read(&bitinfo_hwr_vlnv_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_HWR_VLNV_NAME);
 	}
 	cdev_del(&bitinfo_hwr_vlnv_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_HWR_VLNV_MINOR));
 
-	if (bitinfo_base_freq_opens_cnt) {
+	if (atomic_read(&bitinfo_base_freq_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_BASE_FREQ_NAME);
 	}
 	cdev_del(&bitinfo_base_freq_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_BASE_FREQ_MINOR));
 
-	if (bitinfo_raw_opens_cnt) {
+	if (atomic_read(&bitinfo_raw_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_RAW_NAME);
 	}
 	cdev_del(&bitinfo_raw_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_RAW_MINOR));
 
-	if (bitinfo_wrapper_opens_cnt) {
+	if (atomic_read(&bitinfo_wrapper_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_WRAPPER_NAME);
 	}
 	cdev_del(&bitinfo_wrapper_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_WRAPPER_MINOR));
 
-	if (bitinfo_hwrio_raw_opens_cnt) {
+	if (atomic_read(&bitinfo_hwrio_raw_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_HWRIO_RAW_NAME);
 	}
 	cdev_del(&bitinfo_hwrio_raw_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_HWRIO_RAW_MINOR));
 
-	if (bitinfo_hwrio_ci_a_opens_cnt) {
+	if (atomic_read(&bitinfo_hwrio_ci_a_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_HWRIO_CI_A_NAME);
 	}
 	cdev_del(&bitinfo_hwrio_ci_a_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_HWRIO_CI_A_MINOR));
 
-	if (bitinfo_hwrio_ci_l_opens_cnt) {
+	if (atomic_read(&bitinfo_hwrio_ci_l_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_HWRIO_CI_L_NAME);
 	}
 	cdev_del(&bitinfo_hwrio_ci_l_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_HWRIO_CI_L_MINOR));
 
-	if (bitinfo_hwrio_co_a_opens_cnt) {
+	if (atomic_read(&bitinfo_hwrio_co_a_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_HWRIO_CO_A_NAME);
 	}
 	cdev_del(&bitinfo_hwrio_co_a_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_HWRIO_CO_A_MINOR));
 
-	if (bitinfo_hwrio_co_l_opens_cnt) {
+	if (atomic_read(&bitinfo_hwrio_co_l_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_HWRIO_CO_L_NAME);
 	}
 	cdev_del(&bitinfo_hwrio_co_l_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_HWRIO_CO_L_MINOR));
 
-	if (bitinfo_hwrio_si_a_opens_cnt) {
+	if (atomic_read(&bitinfo_hwrio_si_a_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_HWRIO_SI_A_NAME);
 	}
 	cdev_del(&bitinfo_hwrio_si_a_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_HWRIO_SI_A_MINOR));
 
-	if (bitinfo_hwrio_si_l_opens_cnt) {
+	if (atomic_read(&bitinfo_hwrio_si_l_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_HWRIO_SI_L_NAME);
 	}
 	cdev_del(&bitinfo_hwrio_si_l_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_HWRIO_SI_L_MINOR));
 
-	if (bitinfo_hwrio_so_a_opens_cnt) {
+	if (atomic_read(&bitinfo_hwrio_so_a_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_HWRIO_SO_A_NAME);
 	}
 	cdev_del(&bitinfo_hwrio_so_a_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_HWRIO_SO_A_MINOR));
 
-	if (bitinfo_hwrio_so_l_opens_cnt) {
+	if (atomic_read(&bitinfo_hwrio_so_l_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_HWRIO_SO_L_NAME);
 	}
 	cdev_del(&bitinfo_hwrio_so_l_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_HWRIO_SO_L_MINOR));
 
-	if (bitinfo_hwrio_rst_a_opens_cnt) {
+	if (atomic_read(&bitinfo_hwrio_rst_a_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_HWRIO_RST_A_NAME);
 	}
 	cdev_del(&bitinfo_hwrio_rst_a_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_HWRIO_RST_A_MINOR));
 
-	if (bitinfo_hwrio_cnt_a_opens_cnt) {
+	if (atomic_read(&bitinfo_hwrio_cnt_a_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_HWRIO_CNT_A_NAME);
 	}
 	cdev_del(&bitinfo_hwrio_cnt_a_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_HWRIO_CNT_A_MINOR));
 
-	if (bitinfo_note_opens_cnt) {
+	if (atomic_read(&bitinfo_note_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_NOTE_NAME);
 	}
 	cdev_del(&bitinfo_note_cdev);
 	device_destroy(bitinfo_cl, MKDEV(bitinfo_major, BITINFO_NOTE_MINOR));
 
-	if (bitinfo_intlv_stride_opens_cnt) {
+	if (atomic_read(&bitinfo_intlv_stride_opens_cnt)) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, BITINFO_INTLV_STRIDE_NAME);
 	}

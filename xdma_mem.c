@@ -47,7 +47,7 @@
 #define PRINT_DBG(...)
 #endif
 
-static int xdmamem_opens_cnt;   // Global counter of device opens
+static atomic_t xdmamem_opens_cnt;   // Global counter of device opens
 static dev_t dev_num;		// Global variable for the device number
 static struct cdev c_dev;	// Global variable for the character device structure
 static struct cdev cdev_dev_mem;	// Global variable for dev mem char device struct
@@ -59,7 +59,7 @@ static struct platform_device *xdmamem_pdev;
 static int xdmamem_major;
 
 static long dev_mem_io_addr;
-static int devmem_open_cnt;
+static atomic_t devmem_open_cnt;
 
 struct xdmamem_kern_buf {
 	void * addr;
@@ -331,7 +331,7 @@ int xdmamem_probe(struct platform_device *pdev)
 {
 	struct device_node *xdmamem_node;
 	//num_devices = 0;
-	xdmamem_opens_cnt = 0;
+	atomic_set(&xdmamem_opens_cnt, 0);
 
 	//Save platform device structure for later use
 	xdmamem_pdev = pdev;
@@ -364,7 +364,7 @@ int xdmamem_probe(struct platform_device *pdev)
 	}
 
 	xdmamem_node = pdev->dev.of_node;
-	devmem_open_cnt = 0;
+	atomic_set(&devmem_open_cnt, 0);
 
 	//slab cache for the buffer descriptors
 	INIT_LIST_HEAD(&desc_list);
@@ -415,7 +415,7 @@ xdmamem_alloc_chrdev_err:
 
 int xdmamem_remove(struct platform_device *pdev)
 {
-	if (xdmamem_opens_cnt != 0) {
+	if (atomic_read(&xdmamem_opens_cnt) != 0) {
 		pr_err("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, XDMAMEM_DEV_NAME);
 	}

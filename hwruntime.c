@@ -55,11 +55,11 @@ static struct class *tm_cl;
 static struct cdev ctrl_cdev, cmd_in_cdev, cmd_out_cdev, spwn_out_cdev, spwn_in_cdev;
 static struct device *ctrl_dev, *cmd_in_dev, *cmd_out_dev, *spwn_out_dev, *spwn_in_dev;
 
-static int ctrl_opens_cnt;         // Opens counter of ctrl device
-static int cmd_in_opens_cnt;       // Opens counter of cmd_in device
-static int cmd_out_opens_cnt;      // Opens counter of cmd_out device
-static int spwn_out_opens_cnt;     // Opens counter of spawn_out device
-static int spwn_in_opens_cnt;      // Opens counter of spawn_in device
+static atomic_t ctrl_opens_cnt;         // Opens counter of ctrl device
+static atomic_t cmd_in_opens_cnt;       // Opens counter of cmd_in device
+static atomic_t cmd_out_opens_cnt;      // Opens counter of cmd_out device
+static atomic_t spwn_out_opens_cnt;     // Opens counter of spawn_out device
+static atomic_t spwn_in_opens_cnt;      // Opens counter of spawn_in device
 static int hwruntime_major;
 
 unsigned long ctrl_io_addr;
@@ -133,7 +133,7 @@ static int hwruntime_spwn_out_open(struct inode *i, struct file *f) {
 	}
 	status = read_hwruntime_addr_from_bitinfo(SPWN_OUT_PHANDLE_NAME, 1, SPWN_OUT_BITINFO_ADDR_OFFSET, &spwn_out_io_addr);
 	if (status == 0) { //Extended hwruntime not enabled
-		__sync_sub_and_fetch(&spwn_out_opens_cnt, 1);
+		atomic_dec(&spwn_out_opens_cnt);
 		return -ENODEV;
 	}
 	return 0;
@@ -156,7 +156,7 @@ static int hwruntime_spwn_in_open(struct inode *i, struct file *f) {
 	}
 	status = read_hwruntime_addr_from_bitinfo(SPWN_IN_PHANDLE_NAME, 1, SPWN_IN_BITINFO_ADDR_OFFSET, &spwn_in_io_addr);
 	if (status == 0) { //Extended hwruntime not enabled
-		__sync_sub_and_fetch(&spwn_in_opens_cnt, 1);
+		atomic_dec(&spwn_in_opens_cnt);
 		return -ENODEV;
 	}
 	return 0;
@@ -237,7 +237,7 @@ int hwruntime_probe(struct platform_device *pdev)
 	if (cdev_add(&ctrl_cdev, hwruntime_devt, 1)<0) {
 		goto ctrl_cdev_err;
 	}
-	ctrl_opens_cnt = 0;
+	atomic_set(&ctrl_opens_cnt, 0);
 
 	//Create device for the cmd_in queue
 	cmd_in_dev = device_create(tm_cl, NULL, MKDEV(hwruntime_major, CMD_IN_MINOR), NULL,
@@ -251,7 +251,7 @@ int hwruntime_probe(struct platform_device *pdev)
 	if (cdev_add(&cmd_in_cdev, MKDEV(hwruntime_major, CMD_IN_MINOR), 1) < 0) {
 		goto cmd_in_cdev_err;
 	}
-	cmd_in_opens_cnt = 0;
+	atomic_set(&cmd_in_opens_cnt, 0);
 
 	//Create device for the cmd_out queue
 	cmd_out_dev = device_create(tm_cl, NULL, MKDEV(hwruntime_major, CMD_OUT_MINOR), NULL,
@@ -265,7 +265,7 @@ int hwruntime_probe(struct platform_device *pdev)
 	if (cdev_add(&cmd_out_cdev, MKDEV(hwruntime_major, CMD_OUT_MINOR), 1) < 0) {
 		goto cmd_out_cdev_err;
 	}
-	cmd_out_opens_cnt = 0;
+	atomic_set(&cmd_out_opens_cnt, 0);
 
 	//Create device for the spwn_out queue
 	spwn_out_dev = device_create(tm_cl, NULL, MKDEV(hwruntime_major, SPWN_OUT_MINOR), NULL,
@@ -279,7 +279,7 @@ int hwruntime_probe(struct platform_device *pdev)
 	if (cdev_add(&spwn_out_cdev, MKDEV(hwruntime_major, SPWN_OUT_MINOR), 1) < 0) {
 		goto spwn_out_cdev_err;
 	}
-	spwn_out_opens_cnt = 0;
+	atomic_set(&spwn_out_opens_cnt, 0);
 
 	//Create device for the spwn_in queue
 	spwn_in_dev = device_create(tm_cl, NULL, MKDEV(hwruntime_major, SPWN_IN_MINOR), NULL,
@@ -293,7 +293,7 @@ int hwruntime_probe(struct platform_device *pdev)
 	if (cdev_add(&spwn_in_cdev, MKDEV(hwruntime_major, SPWN_IN_MINOR), 1) < 0) {
 		goto spwn_in_cdev_err;
 	}
-	spwn_in_opens_cnt = 0;
+	atomic_set(&spwn_in_opens_cnt, 0);
 
 	return 0;
 
@@ -326,7 +326,7 @@ hwruntime_alloc_chrdev_err:
 
 int hwruntime_remove(struct platform_device *pdev)
 {
-	if (ctrl_opens_cnt != 0) {
+	if (atomic_read(&ctrl_opens_cnt) != 0) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, CTRL_DEV_NAME);
 	}
@@ -334,7 +334,7 @@ int hwruntime_remove(struct platform_device *pdev)
 	cdev_del(&ctrl_cdev);
 	device_destroy(tm_cl, hwruntime_devt);
 
-	if (cmd_in_opens_cnt != 0) {
+	if (atomic_read(&cmd_in_opens_cnt) != 0) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, CMD_IN_DEV_NAME);
 	}
@@ -342,7 +342,7 @@ int hwruntime_remove(struct platform_device *pdev)
 	cdev_del(&cmd_in_cdev);
 	device_destroy(tm_cl, MKDEV(hwruntime_major, CMD_IN_MINOR));
 
-	if (cmd_out_opens_cnt != 0) {
+	if (atomic_read(&cmd_out_opens_cnt) != 0) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, CMD_OUT_DEV_NAME);
 	}
@@ -350,7 +350,7 @@ int hwruntime_remove(struct platform_device *pdev)
 	cdev_del(&cmd_out_cdev);
 	device_destroy(tm_cl, MKDEV(hwruntime_major, CMD_OUT_MINOR));
 
-	if (spwn_out_opens_cnt != 0) {
+	if (atomic_read(&spwn_out_opens_cnt) != 0) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, SPWN_OUT_DEV_NAME);
 	}
@@ -358,7 +358,7 @@ int hwruntime_remove(struct platform_device *pdev)
 	cdev_del(&spwn_out_cdev);
 	device_destroy(tm_cl, MKDEV(hwruntime_major, SPWN_OUT_MINOR));
 
-	if (spwn_in_opens_cnt != 0) {
+	if (atomic_read(&spwn_in_opens_cnt) != 0) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, SPWN_IN_DEV_NAME);
 	}
