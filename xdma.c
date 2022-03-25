@@ -31,15 +31,6 @@
 
 #include "ompss_fpga_common.h"
 
-#if LINUX_KERNEL_VERSION_4XX
-#  include <linux/dma/xilinx_dma.h>
-#elif LINUX_KERNEL_VERSION_3XX
-#  include <linux/amba/xilinx_dma.h>
-#else
-#  error The support for your Linux Kernel Version is not tested or \
-         we could not determine your kernel version
-#endif
-
 #define XDMA_MODULE_NAME  "ompss_fpga_xdma"
 #define XDMA_DEV_NAME     "xdma"
 //#define DEBUG_PRINT 1
@@ -52,12 +43,33 @@
 #define PRINT_DBG(...)
 #endif
 
+static u32 num_devices;
 static int xdma_opens_cnt;      // Global counter of device opens
+static struct platform_device *ompss_at_fpga_pdev;
 static dev_t dev_num;		// Global variable for the device number
 static struct cdev c_dev;	// Global variable for the character device structure
 static struct class *cl;	// Global variable for the device class
 static struct device *dma_dev;
-static struct platform_device *ompss_at_fpga_pdev;
+
+#if LINUX_KERNEL_VERSION_5XX
+//Support for dma devices is dropped on kernels 5.xx
+//Define everything as stubs returning -ENOSYS
+
+static struct file_operations fops = {
+};
+
+#else
+
+#if LINUX_KERNEL_VERSION_4XX
+#  include <linux/dma/xilinx_dma.h>
+#elif LINUX_KERNEL_VERSION_3XX
+#  include <linux/amba/xilinx_dma.h>
+#else
+#  error The support for your Linux Kernel Version is not tested or \
+         we could not determine your kernel version
+#endif
+
+
 
 static struct dma_chan *cdma_channel;
 
@@ -68,7 +80,6 @@ struct xdma_sg_mem {
 };
 
 static struct xdma_dev *xdma_dev_info[MAX_DEVICES + 1];
-static u32 num_devices;
 static u8 xdma_initialized;
 
 static void xdma_init(void);
@@ -994,6 +1005,7 @@ static void xdma_cleanup(void)
 	num_devices = 0;
 	xdma_initialized = 0;
 }
+#endif //else LINUX_KERNEL_VERSION_5XX
 
 int xdma_probe(struct platform_device *pdev)
 {

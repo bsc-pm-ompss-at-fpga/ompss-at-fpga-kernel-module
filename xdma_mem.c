@@ -47,7 +47,7 @@
 #define PRINT_DBG(...)
 #endif
 
-static int xdmamem_opens_cnt;   // Global counter of device opens
+static atomic_t xdmamem_opens_cnt;   // Global counter of device opens
 static dev_t dev_num;		// Global variable for the device number
 static struct cdev c_dev;	// Global variable for the character device structure
 static struct cdev cdev_dev_mem;	// Global variable for dev mem char device struct
@@ -59,7 +59,7 @@ static struct platform_device *xdmamem_pdev;
 static int xdmamem_major;
 
 static long dev_mem_io_addr;
-static int devmem_open_cnt;
+static atomic_t devmem_open_cnt;
 
 struct xdmamem_kern_buf {
 	void * addr;
@@ -120,8 +120,14 @@ static int xdmamem_mmap(struct file *filp, struct vm_area_struct *vma)
 	requested_size = vma->vm_end - vma->vm_start;
 
 	PRINT_DBG(XDMAMEM_MODULE_NAME "Request %lu bytes to kernel\n", requested_size);
+#if LINUX_KERNEL_VERSION_4XX || LINUX_KERNEL_VERSION_3XX
 	buffer_addr = dma_zalloc_coherent(dev, requested_size, &dma_handle,
 			GFP_KERNEL);
+#else
+	buffer_addr = dma_alloc_coherent(dev, requested_size, &dma_handle,
+			GFP_KERNEL | __GFP_ZERO)
+#endif
+
 	PRINT_DBG("    dma@: %llx kernel@: %p\n", (u64)dma_handle, buffer_addr);
 	if (!buffer_addr) {
 		return -ENOMEM;
@@ -195,6 +201,12 @@ static size_t xdmamem_release_kernel_buffer(struct xdmamem_kern_buf *buff_desc)
 	return size;
 }
 
+#if LINUX_KERNEL_VERSION_5XX
+#define XDMAMEM_ACCESS_OK(type, var, size) access_ok(var, size)
+#else
+#define XDMAMEM_ACCESS_OK(type, var, size) access_ok(type, var, size)
+#endif
+
 static long xdmamem_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	long ret = 0;
@@ -204,7 +216,7 @@ static long xdmamem_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 
 	switch (cmd) {
 	case XDMAMEM_GET_LAST_KBUF:
-		if (!access_ok(void*, (void*)arg, sizeof(void*))) {
+		if (!XDMAMEM_ACCESS_OK(void*, (void*)arg, sizeof(void*))) {
 			pr_debug("<%s> Cannot access user variable @0x%lx",
 					XDMAMEM_MODULE_NAME, arg);
 			return -EFAULT;
@@ -216,7 +228,7 @@ static long xdmamem_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 		break;
 	case XDMAMEM_RELEASE_KBUF:
 		PRINT_DBG(KERN_DEBUG "<%s> ioctl: XDMAMEM_RELEASE_KBUFF\n", XDMAMEM_MODULE_NAME);
-		if (!access_ok(void*, (void*)arg, sizeof(void*))) {
+		if (!XDMAMEM_ACCESS_OK(void*, (void*)arg, sizeof(void*))) {
 			pr_debug("<%s> Cannot access user variable @0x%lx",
 					XDMAMEM_MODULE_NAME, arg);
 			return -EFAULT;
@@ -227,7 +239,7 @@ static long xdmamem_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 
 	case XDMAMEM_GET_DMA_ADDRESS:
 		PRINT_DBG(KERN_DEBUG "<%s> ioctl: XDMAMEM_GET_DMA_ADDRESS\n", XDMAMEM_MODULE_NAME);
-		if (!access_ok(void*, (void*)arg, sizeof(void*))) {
+		if (!XDMAMEM_ACCESS_OK(void*, (void*)arg, sizeof(void*))) {
 			pr_debug("<%s> Cannot access user variable @0x%lx",
 					XDMAMEM_MODULE_NAME, arg);
 			return -EFAULT;
@@ -319,7 +331,7 @@ int xdmamem_probe(struct platform_device *pdev)
 {
 	struct device_node *xdmamem_node;
 	//num_devices = 0;
-	xdmamem_opens_cnt = 0;
+	atomic_set(&xdmamem_opens_cnt, 0);
 
 	//Save platform device structure for later use
 	xdmamem_pdev = pdev;
@@ -352,7 +364,7 @@ int xdmamem_probe(struct platform_device *pdev)
 	}
 
 	xdmamem_node = pdev->dev.of_node;
-	devmem_open_cnt = 0;
+	atomic_set(&devmem_open_cnt, 0);
 
 	//slab cache for the buffer descriptors
 	INIT_LIST_HEAD(&desc_list);
@@ -403,7 +415,7 @@ xdmamem_alloc_chrdev_err:
 
 int xdmamem_remove(struct platform_device *pdev)
 {
-	if (xdmamem_opens_cnt != 0) {
+	if (atomic_read(&xdmamem_opens_cnt) != 0) {
 		pr_err("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, XDMAMEM_DEV_NAME);
 	}

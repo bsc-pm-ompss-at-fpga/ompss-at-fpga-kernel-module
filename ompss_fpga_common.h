@@ -27,11 +27,14 @@
 #include <linux/platform_device.h>
 #include <linux/uaccess.h>
 #include <linux/version.h>
+#include <linux/atomic.h>
 
 #include "ompss_fpga.h"
 
 #define DEV_PREFIX "ompss_fpga"
 
+#define LINUX_KERNEL_VERSION_5XX (LINUX_VERSION_CODE < KERNEL_VERSION(6,0,0) \
+	&& LINUX_VERSION_CODE >= KERNEL_VERSION(5,0,0))
 #define LINUX_KERNEL_VERSION_4XX (LINUX_VERSION_CODE < KERNEL_VERSION(5,0,0) \
 	&& LINUX_VERSION_CODE >= KERNEL_VERSION(4,0,0))
 #define LINUX_KERNEL_VERSION_3XX (LINUX_VERSION_CODE < KERNEL_VERSION(4,0,0) \
@@ -53,8 +56,8 @@ int bitinfo_remove(struct platform_device *pdev);
 int hwruntime_probe(struct platform_device *pdev);
 int hwruntime_remove(struct platform_device *pdev);
 
-int generic_open(int *opens_cnt, const int max_opens, const char *name);
-int generic_close(int *opens_cnt, const char *name);
+int generic_open(atomic_t *opens_cnt, const int max_opens, const char *name);
+int generic_close(atomic_t *opens_cnt, const char *name);
 
 int generic_mmap(struct file *filp, struct vm_area_struct *vma,
 		unsigned long io_addr, const char *name);

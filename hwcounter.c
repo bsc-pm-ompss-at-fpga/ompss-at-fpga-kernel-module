@@ -33,7 +33,7 @@ static struct class *hwcounter_cl;
 static struct cdev hwcounter_cdev;
 static struct device *hwcounter_dev;
 
-static int hwcounter_opens_cnt;             // Opens counter of device
+static atomic_t hwcounter_opens_cnt;        // Opens counter of device
 static int hwcounter_major;                 // Device major number
 u32 __iomem * hwcounter_io_addr;            // Virt. kernel address of hwcounter BRAM
 static unsigned long hwcounter_phy_addr;    // Phy. address of hwcoutner BRAM
@@ -46,7 +46,7 @@ int hwcounter_open(struct inode *i, struct file *f) {
 	}
 	status = read_hwcounter_addr_from_bitinfo(&hwcounter_phy_addr);
 	if (status == 0) {
-		__sync_sub_and_fetch(&hwcounter_opens_cnt, 1);
+		atomic_dec(&hwcounter_opens_cnt);
 		return -ENODEV;
 	}
 	hwcounter_io_addr = ioremap((resource_size_t)hwcounter_phy_addr, 8l);
@@ -100,7 +100,7 @@ int hwcounter_probe(struct platform_device *pdev)
 {
 	hwcounter_io_addr = NULL;
 	hwcounter_phy_addr = 0;
-	hwcounter_opens_cnt = 0;
+	atomic_set(&hwcounter_opens_cnt, 0);
 
 	//Create the device class
 	if (alloc_chrdev_region(&hwcounter_devt, 0, 1 /*num devices*/, HWCOUNTER_MODULE_NAME) < 0) {
@@ -144,7 +144,7 @@ hwcounter_alloc_err:
 
 int hwcounter_remove(struct platform_device *pdev)
 {
-	if (hwcounter_opens_cnt != 0) {
+	if (atomic_read(&hwcounter_opens_cnt) != 0) {
 		pr_info("<%s> exit: Device '%s' opens counter is not zero\n",
 			MODULE_NAME, HWCOUNTER_DEV_NAME);
 	}

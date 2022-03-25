@@ -23,31 +23,31 @@
 
 #include "ompss_fpga_common.h"
 
-int generic_open(int *opens_cnt, const int max_opens, const char *name) {
+int generic_open(atomic_t *opens_cnt, const int max_opens, const char *name) {
 	//Allow only one process using the device at the same time
 	//NOTE: Not optimizing with initial check as f&a will almost always succed
-	if (__sync_fetch_and_add(opens_cnt, 1) >= max_opens) {
-		__sync_sub_and_fetch(opens_cnt, 1);
+	if (atomic_read(opens_cnt) >= max_opens) {
 		pr_err("<%s> open: Device '%s' opened more times than allowed (%d)\n",
 			MODULE_NAME, name, max_opens);
 		return -EBUSY;
 	}
+	atomic_inc(opens_cnt);
 	if (bitinfo_get_rev() == 0) {
-		__sync_sub_and_fetch(opens_cnt, 1);
+		atomic_dec(opens_cnt);
 		return -1;
 	} 
 	pr_info(KERN_INFO "<%s> Open '%s'\n", MODULE_NAME, name);
 	return 0;
 }
 
-int generic_close(int *opens_cnt, const char *name) {
-	int cnt = __sync_sub_and_fetch(opens_cnt, 1);
-	if (cnt < 0) {
+int generic_close(atomic_t *opens_cnt, const char *name) {
+	if (atomic_read(opens_cnt) == 0) {
 		pr_err("<%s> close: "
 			"Device '%s' has been closed more times than opened\n",
 			MODULE_NAME, name);
 		return -1;
 	}
+	atomic_dec(opens_cnt);
 	pr_info("<%s> Close '%s'\n", MODULE_NAME, name);
 	return 0;
 }
