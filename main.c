@@ -32,10 +32,6 @@ int generic_open(atomic_t *opens_cnt, const int max_opens, const char *name) {
 		return -EBUSY;
 	}
 	atomic_inc(opens_cnt);
-	if (bitinfo_get_rev() == 0) {
-		atomic_dec(opens_cnt);
-		return -1;
-	} 
 	pr_info(KERN_INFO "<%s> Open '%s'\n", MODULE_NAME, name);
 	return 0;
 }
@@ -79,10 +75,10 @@ int read_memspace(struct device_node *node, u32 *mem_space) {
 static int ompss_at_fpga_driver_probe(struct platform_device *pdev) {
 	int ret_code = 0;
 	pr_info("<%s> Module probe\n", MODULE_NAME);
-	ret_code |= hwcounter_probe(pdev);
 	ret_code |= xdma_probe(pdev);
 	ret_code |= xdmamem_probe(pdev);
 	ret_code |= bitinfo_probe(pdev);
+	ret_code |= hwcounter_probe(pdev);
 	ret_code |= hwruntime_probe(pdev);
 	return ret_code;
 }
@@ -91,10 +87,10 @@ static int ompss_at_fpga_driver_remove(struct platform_device *pdev) {
 	int ret_code = 0;
 	pr_info("<%s> Module remove\n", MODULE_NAME);
 	ret_code |= hwruntime_remove(pdev);
+	ret_code |= hwcounter_remove(pdev);
 	ret_code |= bitinfo_remove(pdev);
 	ret_code |= xdmamem_remove(pdev);
 	ret_code |= xdma_remove(pdev);
-	ret_code |= hwcounter_remove(pdev);
 	return ret_code;
 }
 

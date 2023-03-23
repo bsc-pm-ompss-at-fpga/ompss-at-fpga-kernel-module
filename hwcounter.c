@@ -44,13 +44,9 @@ int hwcounter_open(struct inode *i, struct file *f) {
 	if (status) {
 		return status;
 	}
-	status = read_hwcounter_addr_from_bitinfo(&hwcounter_phy_addr);
-	if (status == 0) {
-		atomic_dec(&hwcounter_opens_cnt);
-		return -ENODEV;
-	}
+	hwcounter_phy_addr = get_hwcounter_addr();
 	hwcounter_io_addr = ioremap((resource_size_t)hwcounter_phy_addr, 8l);
-	return 0;
+	return status;
 }
 
 static int hwcounter_close(struct inode *i, struct file *f) {
@@ -64,7 +60,7 @@ ssize_t hwcounter_read(struct file *f, char __user *buf, size_t len, loff_t *off
 	u64 timestamp, lo, hi;
 	lo = 0;
 	hi = 0;
-	if (len < sizeof(u64)) return -EINVAL;
+	if (len != sizeof(u64) || *off != 0) return -EINVAL;
 	lo = (u64) readl(hwcounter_io_addr);
 	hi = (u64) readl(hwcounter_io_addr + 1) << 32;
 	timestamp = lo | hi;
@@ -93,7 +89,7 @@ static struct file_operations hwcounter_fops = {
 	.open = hwcounter_open,
 	.release = hwcounter_close,
 	.read = hwcounter_read,
-	.unlocked_ioctl = hwcounter_ioctl,
+	.unlocked_ioctl = hwcounter_ioctl
 };
 
 int hwcounter_probe(struct platform_device *pdev)
