@@ -28,7 +28,6 @@
 #include <linux/uaccess.h>
 #include <linux/version.h>
 #include <linux/atomic.h>
-
 #include "ompss_fpga.h"
 
 #define DEV_PREFIX "ompss_fpga"
@@ -40,6 +39,16 @@
 #define LINUX_KERNEL_VERSION_3XX (LINUX_VERSION_CODE < KERNEL_VERSION(4,0,0) \
 	&& LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
 #define TARGET_64_BITS (defined(CONFIG_64BIT))
+
+u64 get_cmd_in_addr(void);
+u64 get_cmd_out_addr(void);
+u64 get_spawn_in_addr(void);
+u64 get_spawn_out_addr(void);
+u64 get_hwcounter_addr(void);
+u64 get_managed_rstn_addr(void);
+
+int hwruntime_probe(struct platform_device *pdev);
+int hwruntime_remove(struct platform_device *pdev);
 
 int hwcounter_probe(struct platform_device *pdev);
 int hwcounter_remove(struct platform_device *pdev);
@@ -53,37 +62,16 @@ int xdmamem_remove(struct platform_device *pdev);
 int bitinfo_probe(struct platform_device *pdev);
 int bitinfo_remove(struct platform_device *pdev);
 
-int hwruntime_probe(struct platform_device *pdev);
-int hwruntime_remove(struct platform_device *pdev);
-
 int generic_open(atomic_t *opens_cnt, const int max_opens, const char *name);
 int generic_close(atomic_t *opens_cnt, const char *name);
 
 int generic_mmap(struct file *filp, struct vm_area_struct *vma,
 		unsigned long io_addr, const char *name);
 
-int bitinfo_get_rev(void);
-int bitinfo_get_num_acc(void);
-int bitinfo_get_intlv_stride(void);
-u32 * get_n_field_ptr(const u8 n);
-int read_hwruntime_addr_from_bitinfo(const char* phandle_name, int extended_queue, int bitinfo_addr_offset, unsigned long* dev_mem_space);
-int read_hwcounter_addr_from_bitinfo(unsigned long* hwcounter_phy_addr);
-
 #if TARGET_64_BITS
 int read_memspace(struct device_node *node, u64 *mem_space);
 #else
 int read_memspace(struct device_node *node, u32 *mem_space);
 #endif
-
-#define CMD_IN_BITINFO_ADDR_OFFSET    0
-#define CMD_IN_BITINFO_LEN_OFFSET     2
-#define CMD_OUT_BITINFO_ADDR_OFFSET   3
-#define CMD_OUT_BITINFO_LEN_OFFSET    5
-#define SPWN_IN_BITINFO_ADDR_OFFSET   6
-#define SPWN_IN_BITINFO_LEN_OFFSET    8
-#define SPWN_OUT_BITINFO_ADDR_OFFSET  9
-#define SPWN_OUT_BITINFO_LEN_OFFSET   11
-#define RST_BITINFO_ADDR_OFFSET       12
-#define HWCOUNTER_BITINFO_ADDR_OFFSET 14
 
 #endif //__OMPSS_FPGA_COMMON_H__
