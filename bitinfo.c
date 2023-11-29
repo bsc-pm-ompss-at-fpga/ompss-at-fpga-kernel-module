@@ -34,7 +34,7 @@
 #define BITINFO_MODULE_NAME      "ompss_fpga_bitinfo"
 #define BITINFO_NAME             "bitinfo"
 #define BITINFO_PHANDLE_NAME     "bitstreaminfo"
-#define BITINFO_VERSION 10
+#define BITINFO_VERSION 11
 #define BITINFO_NUM_DEVICES 1
 #define BITINFO_FEATURES_IDX 2
 #define BIT_FEATURES_HWCOUNTER_B 1
