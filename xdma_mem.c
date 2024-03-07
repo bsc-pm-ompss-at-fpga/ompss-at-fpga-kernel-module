@@ -201,7 +201,7 @@ static size_t xdmamem_release_kernel_buffer(struct xdmamem_kern_buf *buff_desc)
 	return size;
 }
 
-#if LINUX_KERNEL_VERSION_5XX
+#if (LINUX_KERNEL_VERSION_5XX || LINUX_KERNEL_VERSION_6XX)
 #define XDMAMEM_ACCESS_OK(type, var, size) access_ok(var, size)
 #else
 #define XDMAMEM_ACCESS_OK(type, var, size) access_ok(type, var, size)
