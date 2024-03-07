@@ -51,7 +51,7 @@ static struct cdev c_dev;	// Global variable for the character device structure
 static struct class *cl;	// Global variable for the device class
 static struct device *dma_dev;
 
-#if LINUX_KERNEL_VERSION_5XX
+#if (LINUX_KERNEL_VERSION_5XX || LINUX_KERNEL_VERSION_6XX)
 //Support for dma devices is dropped on kernels 5.xx
 //Define everything as stubs returning -ENOSYS
 
@@ -1005,7 +1005,7 @@ static void xdma_cleanup(void)
 	num_devices = 0;
 	xdma_initialized = 0;
 }
-#endif //else LINUX_KERNEL_VERSION_5XX
+#endif //else (LINUX_KERNEL_VERSION_5XX || LINUX_KERNEL_VERSION_6XX)
 
 int xdma_probe(struct platform_device *pdev)
 {
