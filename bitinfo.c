@@ -145,13 +145,28 @@ static long bitinfo_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 	return 0;
 }
 
+static int bitinfo_mmap(struct file *filp, struct vm_area_struct *vma) {
+	int res;
+	unsigned long size;
+
+	size = vma->vm_end - vma->vm_start;
+	pr_info("<%s> mmap: addr 0x%lx, size %lu\n", MODULE_NAME, vma->vm_pgoff << PAGE_SHIFT, size);
+
+	vma->vm_page_prot = phys_mem_access_prot(
+			filp, vma->vm_pgoff, size, vma->vm_page_prot);
+	res = remap_pfn_range(vma, vma->vm_start,
+			vma->vm_pgoff, size, vma->vm_page_prot);
+	return res;
+}
+
 static struct file_operations bitinfo_fops = {
 	.owner = THIS_MODULE,
 	.open = bitinfo_open,
 	.release = bitinfo_close,
 	.read = bitinfo_read,
 	.write = bitinfo_write,
-	.unlocked_ioctl = bitinfo_ioctl
+	.unlocked_ioctl = bitinfo_ioctl,
+	.mmap = bitinfo_mmap
 };
 
 static int bitinfo_map_io(struct device_node *bitinfo_node) {
